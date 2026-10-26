@@ -129,13 +129,28 @@ try {
   assert.ok(digest.body.text.length <= 800)
   console.log('ok focus + digest')
 
+  // 3b. update + UI + export
+  const updated = await post('/api/update', { id, text: 'standalone hub edited', kind: 'project', tags: ['edited'] })
+  assert.equal(updated.status, 200)
+  assert.equal(updated.body.item.text, 'standalone hub edited')
+  assert.equal(updated.body.item.kind, 'project')
+  const uiResponse = await fetch(base + '/ui')
+  assert.equal(uiResponse.status, 200)
+  assert.match(await uiResponse.text(), /共享记忆/)
+  const exportResponse = await fetch(base + '/api/export')
+  assert.equal(exportResponse.status, 200)
+  assert.match(await exportResponse.text(), /standalone hub edited/)
+  const page = await api('/api/items?limit=1&offset=0')
+  assert.equal(page.body.limit, 1)
+  console.log('ok update + UI + export')
+
   // 4. MCP bridge against the same hub
   const status = await callBridgeTool(base, 'memory_status')
   assert.equal(status.isError, false)
   assert.match(status.content[0].text, /共享记忆服务运行中/)
   const bridged = await callBridgeTool(base, 'memory_search', { q: 'standalone hub' })
   assert.equal(bridged.isError, false)
-  assert.match(bridged.content[0].text, /standalone hub smoke test memory/)
+  assert.match(bridged.content[0].text, /standalone hub edited/)
   console.log('ok MCP bridge against standalone hub')
 
   // 5. discovery file

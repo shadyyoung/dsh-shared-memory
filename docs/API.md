@@ -53,7 +53,7 @@
 ```json
 {
   "name": "dsh-shared-memory",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "apiBase": "http://127.0.0.1:62877/dsh-memory",
   "origin": "http://127.0.0.1:62877",
   "storeDir": "/Users/<user>/.dsh/shared-memory",
@@ -81,6 +81,10 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 | GET | `/api/recent?limit=20` | 最近记忆（等价 search 无 q） |
 | GET | `/api/current` | 焦点 + 最近会话动态 + 最近记忆 |
 | GET | `/api/activity?limit=10` | 最近会话动态 |
+| GET | `/api/items` | 分页列表（limit/offset/q/kind/tag/days/session） |
+| GET | `/api/export` | 导出全部记忆（[NDJSON](https://github.com/ndjson/ndjson-spec) 下载） |
+| POST | `/api/update` | 按 id 原地编辑记忆 |
+| GET | `/ui` | 浏览器查看/编辑页面（HTML） |
 | POST | `/api/remember` | 新增记忆 |
 | POST | `/api/forget` | 删除记忆 |
 | POST | `/api/current` | 设置/清除焦点 |
@@ -91,7 +95,7 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 {
   "ok": true,
   "name": "dsh-shared-memory",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "startedAt": 1700000000000,
   "storeDir": "/Users/.../.dsh/shared-memory",
   "stats": { "memories": 42, "messages": 30, "sessions": 3, "hasFocus": true }
@@ -126,6 +130,35 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 ```
 
 `focus` 可能为 `null`；`activity` 最多 10 条、按 `updatedAt` 倒序；`recent` 不含 `message` 类，最多 10 条。
+
+### GET /api/items
+
+与 `/api/search` 相同，但强制支持分页：
+
+```json
+{ "items": [Memory], "total": 42, "offset": 0, "limit": 50 }
+```
+
+参数：`q`、`kind`、`tag`、`limit`（默认 50，最大 100）、`offset`、`days`、`session`。
+
+### POST /api/update
+
+按 id 编辑一条已有记忆（保留 id 与 `createdAt`，写入 `updatedAt`）：
+
+```json
+{ "id": "mem_...", "text": "新的正文", "kind": "project", "tags": ["新标签"] }
+```
+
+`text`/`kind`/`tags` 都可选，只传要改的字段。返回 `{ "item": Memory }`。
+不可编辑 `kind=message` 的原话缓存（返回 400）；id 不存在返回 404。
+
+### GET /api/export
+
+返回 `application/x-ndjson` 附件，内容为整个 store 的 JSONL，用于备份。
+
+### GET /ui
+
+返回单文件查看/编辑页面（`ui/index.html`）。页面与 API 同源，`apiToken` 启用时在页面内输入 token（仅存 localStorage）。
 
 ### GET /api/activity
 

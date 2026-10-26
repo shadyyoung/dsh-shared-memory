@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>共享记忆 · 查看与编辑</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --panel:#ffffff; --border:#e5e7eb; --text:#0f172a; --muted:#64748b;
+    --accent:#6c5ce7; --accent-soft:#f1efff; --danger:#dc2626; --ok:#16a34a;
+    --note:#6b7280; --profile:#2563eb; --preference:#7c3aed; --goal:#0891b2;
+    --project:#16a34a; --task:#d97706; --message:#64748b;
+    --shadow:0 1px 2px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0b1020; --panel:#121a2e; --border:#243049; --text:#e2e8f0; --muted:#94a3b8;
+      --accent:#8b7cf6; --accent-soft:#1e1b3a; --danger:#f87171; --ok:#4ade80;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+      --note:#9ca3af; --profile:#60a5fa; --preference:#a78bfa; --goal:#22d3ee;
+      --project:#4ade80; --task:#fbbf24; --message:#94a3b8;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:24px 18px 80px}
+  header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px}
+  .badge{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);vertical-align:middle}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
+  .stats{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:13px}
+  .stats b{color:var(--text)}
+  h2{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .muted{color:var(--muted)}
+  textarea,input[type=text],input[type=password],select{
+    width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);
+    border-radius:10px;padding:9px 11px;font:inherit;outline:none
+  }
+  textarea:focus,input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  textarea{resize:vertical}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .row > .grow{flex:1 1 220px}
+  button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:7px 13px;font:inherit;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.danger{color:var(--danger)}
+  button.small{padding:4px 9px;font-size:12px;border-radius:8px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .toolbar .grow{flex:1 1 240px}
+  .item{border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:var(--panel)}
+  .item-head{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+  .kind{font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;border:1px solid currentColor;text-transform:lowercase}
+  .kind.note{color:var(--note)} .kind.profile{color:var(--profile)} .kind.preference{color:var(--preference)}
+  .kind.goal{color:var(--goal)} .kind.project{color:var(--project)} .kind.task{color:var(--task)} .kind.message{color:var(--message)}
+  .meta{color:var(--muted);font-size:12px}
+  .item-text{white-space:pre-wrap;word-break:break-word;margin:2px 0 6px}
+  .tags{margin-top:4px}
+  .tag{display:inline-block;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:0 7px;margin:0 4px 4px 0}
+  .actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .empty{color:var(--muted);text-align:center;padding:28px 0}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
+  #toast.show{opacity:1}
+  #tokenPanel{display:none}
+  #tokenPanel.show{display:block}
+  .foot{color:var(--muted);font-size:12px;text-align:center;margin-top:22px}
+  a{color:var(--accent)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>共享记忆 <span class="badge">AI 跨平台记忆增强</span></h1>
+      <div class="sub">查看 / 编辑跨会话、跨应用的记忆 · <span id="apiBase" class="muted"></span></div>
+    </div>
+    <div class="row">
+      <button id="refreshBtn" title="刷新">刷新</button>
+      <button id="exportBtn" title="导出 JSONL 备份">导出</button>
+      <button id="tokenBtn" title="设置访问 token">Token</button>
+    </div>
+  </header>
+
+  <div class="card" id="statsCard">
+    <div class="stats" id="stats"><span class="muted">加载中…</span></div>
+  </div>
+
+  <div class="card" id="tokenPanel">
+    <h2>访问 token</h2>
+    <div class="sub" style="margin-bottom:8px">服务端设置了 apiToken，填写后才能读写。token 只保存在本浏览器 localStorage。</div>
+    <div class="row">
+      <input type="password" id="tokenInput" class="grow" placeholder="Bearer token"/>
+      <button class="primary" id="tokenSave">保存并重试</button>
+      <button id="tokenClear">清除</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>当前正在做的事</h2>
+    <textarea id="focusText" rows="2" placeholder="一句话描述当前任务"></textarea>
+    <div style="height:8px"></div>
+    <input type="text" id="focusSteps" placeholder="下一步（用逗号分隔，可留空）"/>
+    <div class="actions">
+      <button class="primary" id="focusSave">保存焦点</button>
+      <button id="focusClear">清除焦点</button>
+      <span class="meta" id="focusMeta"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>记忆列表</h2>
+    <div class="toolbar">
+      <input type="text" id="search" class="grow" placeholder="搜索记忆内容或标签…"/>
+      <select id="kindFilter" style="flex:0 0 130px">
+        <option value="">全部类型</option>
+        <option value="profile">profile 画像</option>
+        <option value="preference">preference 偏好</option>
+        <option value="goal">goal 目标</option>
+        <option value="project">project 项目</option>
+        <option value="task">task 任务</option>
+        <option value="note">note 笔记</option>
+        <option value="message">message 原话</option>
+      </select>
+    </div>
+    <div id="list"></div>
+    <div class="actions" style="justify-content:center">
+      <button id="moreBtn" class="hidden">加载更多</button>
+    </div>
+  </div>
+
+  <div class="foot">本地服务 · 数据只存在 <code>~/.dsh/shared-memory/</code> · 原话缓存只读（可删除）</div>
+</div>
+<div id="toast"></div>
+
+<script>
+(() => {
+  const BASE = location.pathname.replace(/\/ui\/?$/, '') || '/dsh-memory'
+  const state = { q: '', kind: '', offset: 0, limit: 50, total: 0, items: [], editing: null, token: localStorage.getItem('sm-token') || '' }
+  const $ = (id) => document.getElementById(id)
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n }
+  let toastTimer = null
+  function toast(msg, ms = 2200) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show')
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms)
+  }
+  const fmt = (ts) => { const d = Date.now() - ts; if (d < 6e4) return '刚刚'; if (d < 36e5) return Math.floor(d / 6e4) + ' 分钟前'; if (d < 864e5) return Math.floor(d / 36e5) + ' 小时前'; return Math.floor(d / 864e5) + ' 天前' }
+  const shortId = (id) => (id || '').replace(/^(mem|msg)_/, '').slice(0, 8)
+
+  async function api(path, opts = {}) {
+    const headers = Object.assign({}, opts.headers || {})
+    if (opts.body) headers['content-type'] = 'application/json'
+    if (state.token) headers.authorization = 'Bearer ' + state.token
+    const res = await fetch(BASE + path, Object.assign({}, opts, { headers }))
+    if (res.status === 401) { $('tokenPanel').classList.add('show'); throw new Error('需要访问 token') }
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status
+      try { const j = await res.json(); msg = (j.error && j.error.message) || msg } catch {}
+      throw new Error(msg)
+    }
+    return res.json()
+  }
+
+  function setStats(h) {
+    const s = h.stats || {}
+    const wrap = $('stats'); wrap.textContent = ''
+    const add = (label, value) => { const n = el('span'); n.append(el('b', null, String(value)), document.createTextNode(' ' + label)); wrap.append(n) }
+    add('条记忆', s.memories || 0); add('条原话', s.messages || 0); add('个会话', s.sessions || 0)
+    add('焦点', s.hasFocus ? '有' : '无')
+    const v = el('span', 'muted', 'v' + (h.version || '')); wrap.append(v)
+    $('apiBase').textContent = location.origin + BASE
+  }
+
+  async function loadHealth() {
+    try { setStats(await api('/health')) } catch (e) { toast(e.message) }
+  }
+
+  async function loadFocus() {
+    try {
+      const j = await api('/api/current')
+      const f = j.focus
+      $('focusText').value = f ? f.text : ''
+      $('focusSteps').value = f ? (f.nextSteps || []).join('，') : ''
+      $('focusMeta').textContent = f ? (f.updatedBy || '') + ' · ' + fmt(f.updatedAt) : ''
+    } catch (e) { toast(e.message) }
+  }
+
+  function renderList(reset) {
+    if (reset) { state.items = []; state.offset = 0; $('list').textContent = '' }
+    state.items = state.items.concat(res.items)
+    state.total = res.total
+    state.offset = state.items.length
+    const list = $('list')
+    if (!state.items.length) {
+      list.append(el('div', 'empty', state.q || state.kind ? '没有匹配的记忆' : '还没有记忆，先去聊会儿吧'))
+    }
+    for (const item of res.items) list.append(renderItem(item))
+    $('moreBtn').classList.toggle('hidden', state.items.length >= state.total)
+  }
+
+  function renderItem(item) {
+    const box = el('div', 'item')
+    const head = el('div', 'item-head')
+    head.append(el('span', 'kind ' + item.kind, item.kind))
+    head.append(el('span', 'meta', (item.source && item.source.app ? item.source.app + ' · ' : '') + fmt(item.createdAt)))
+    head.append(el('span', 'meta', '#' + shortId(item.id)))
+    const actions = el('div', 'actions')
+    if (state.editing === item.id) {
+      const text = el('textarea'); text.rows = 3; text.value = item.text
+      const kind = el('select'); ['note','profile','preference','goal','project','task'].forEach(k => { const o = el('option', null, k); o.value = k; if (k === item.kind) o.selected = true; kind.append(o) })
+      const tags = el('input'); tags.type = 'text'; tags.value = (item.tags || []).join(', '); tags.placeholder = '标签，逗号分隔'
+      const save = el('button', 'primary small', '保存'); save.onclick = () => updateItem(item, text.value, kind.value, tags.value)
+      const cancel = el('button', 'small', '取消'); cancel.onclick = () => { state.editing = null; refreshList() }
+      box.append(head, text, kind, tags, actions)
+      actions.append(save, cancel)
+      return box
+    }
+    head.append(el('span', 'meta', item.updatedAt ? '已编辑' : ''))
+    box.append(head)
+    const body = el('div', 'item-text', item.text); box.append(body)
+    if (item.tags && item.tags.length) {
+      const tags = el('div', 'tags'); for (const t of item.tags) tags.append(el('span', 'tag', t)); box.append(tags)
+    }
+    if (item.kind !== 'message') {
+      const edit = el('button', 'small', '编辑'); edit.onclick = () => { state.editing = item.id; refreshList() }
+      actions.append(edit)
+    }
+    const del = el('button', 'small danger', '删除'); del.onclick = () => removeItem(item)
+    actions.append(del)
+    box.append(actions)
+    return box
+  }
+
+  async function refreshList() {
+    try {
+      const params = new URLSearchParams({ limit: String(state.limit), offset: '0' })
+      if (state.q) params.set('q', state.q)
+      if (state.kind) params.set('kind', state.kind)
+      const res = await api('/api/items?' + params.toString())
+      state.offset = 0
+      state.items = res.items
+      state.total = res.total
+      const list = $('list'); list.textContent = ''
+      if (!state.items.length) list.append(el('div', 'empty', state.q || state.kind ? '没有匹配的记忆' : '还没有记忆，先去聊会儿吧'))
+      for (const item of res.items) list.append(renderItem(item))
+      $('moreBtn').classList.toggle('hidden', state.items.length >= state.total)
+    } catch (e) { toast(e.message) }
+  }
+
+  async function loadMore() {
+    try {
+      const params = new URLSearchParams({ limit: String(state.limit), offset: String(state.offset) })
+      if (state.q) params.set('q', state.q)
+      if (state.kind) params.set('kind', state.kind)
+      const res = await api('/api/items?' + params.toString())
+      renderList(res)
+    } catch (e) { toast(e.message) }
+  }
+
+  async function updateItem(item, text, kind, tags) {
+    try {
+      await api('/api/update', { method: 'POST', body: JSON.stringify({ id: item.id, text: text, kind: kind, tags: tags.split(',').map(s => s.trim()).filter(Boolean) }) })
+      state.editing = null
+      await refreshList(); await loadHealth(); toast('已保存')
+    } catch (e) { toast(e.message) }
+  }
+
+  async function removeItem(item) {
+    if (!confirm('删除这条记忆？\n\n' + item.text.slice(0, 120))) return
+    try { await api('/api/forget', { method: 'POST', body: JSON.stringify({ id: item.id }) }); await refreshList(); await loadHealth(); toast('已删除') } catch (e) { toast(e.message) }
+  }
+
+  async function saveFocus() {
+    const text = $('focusText').value.trim()
+    const steps = $('focusSteps').value.split(/[,，\n]/).map(s => s.trim()).filter(Boolean)
+    try {
+      if (!text) { await api('/api/current', { method: 'POST', body: JSON.stringify({ clear: true }) }); toast('已清除焦点') }
+      else { await api('/api/current', { method: 'POST', body: JSON.stringify({ focus: text, nextSteps: steps }) }); toast('焦点已保存') }
+      await loadFocus(); await loadHealth()
+    } catch (e) { toast(e.message) }
+  }
+
+  async function clearFocus() { try { await api('/api/current', { method: 'POST', body: JSON.stringify({ clear: true }) }); await loadFocus(); toast('已清除') } catch (e) { toast(e.message) } }
+
+  async function exportAll() {
+    try {
+      const headers = state.token ? { authorization: 'Bearer ' + state.token } : {}
+      const res = await fetch(BASE + '/api/export', { headers })
+      if (!res.ok) throw new Error('HTTP ' + res.status)
+      const blob = await res.blob()
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'shared-memory-export.jsonl'
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+      toast('已导出 JSONL')
+    } catch (e) { toast(e.message) }
+  }
+
+  let searchTimer = null
+  function bind() {
+    $('refreshBtn').onclick = () => { refreshList(); loadFocus(); loadHealth() }
+    $('exportBtn').onclick = exportAll
+    $('tokenBtn').onclick = () => $('tokenPanel').classList.toggle('show')
+    $('tokenSave').onclick = async () => { state.token = $('tokenInput').value.trim(); localStorage.setItem('sm-token', state.token); $('tokenPanel').classList.remove('show'); toast('token 已保存'); await refreshList(); await loadFocus(); await loadHealth() }
+    $('tokenClear').onclick = async () => { state.token = ''; $('tokenInput').value = ''; localStorage.removeItem('sm-token'); toast('token 已清除'); await refreshList() }
+    $('focusSave').onclick = saveFocus
+    $('focusClear').onclick = clearFocus
+    $('moreBtn').onclick = loadMore
+    $('search').oninput = (ev) => {
+      clearTimeout(searchTimer)
+      searchTimer = setTimeout(() => { state.q = ev.target.value.trim(); refreshList() }, 250)
+    }
+    $('kindFilter').onchange = (ev) => { state.kind = ev.target.value; refreshList() }
+  }
+
+  bind()
+  refreshList(); loadHealth(); loadFocus()
+})()
+</script>
+</body>
+</html>

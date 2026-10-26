@@ -12,7 +12,7 @@
 - 形态：**DeepSeek Harness Host 插件（bundle）** + **零依赖 MCP stdio 桥** + **可复用 Agent Skill**
 - 存储位置：`~/.dsh/shared-memory/`
 - 包名 / 行 id：`@local/shared-memory` / `shared-memory`
-- 版本：1.1.0 · License：MIT
+- 版本：1.2.0 · License：MIT
 
 > 原名 **共享记忆**，自 v1.0.0 起中文名改为 **AI 跨平台记忆增强 1.0**；**英文名保持 Shared Memory 不变**。内部标识（包名、skill id、存储目录）保持不变，不影响已有安装与数据。
 
@@ -24,6 +24,7 @@
 ├── index.js                  # Host 插件：捕获/存储/工具/提示注入/HTTP API
 ├── cordis.patch.yml          # bundle 行声明与默认 config
 ├── standalone/server.mjs     # 独立 Hub（不依赖 DSH，跨平台）
+├── ui/index.html             # 浏览器查看/编辑页面（/dsh-memory/ui）
 ├── mcp/server.mjs            # 零依赖 MCP stdio 桥（复制到 ~/.dsh/shared-memory/）
 ├── skills/shared-memory/     # 可复用 Agent Skill（WorkBuddy 等）
 │   └── SKILL.md
@@ -143,7 +144,8 @@ node standalone/server.mjs --port 7400 --host 127.0.0.1 --store ~/.dsh/shared-me
 | 当前焦点 | 用户一说新的实质任务就自动更新（过滤“继续/再来一次”这类短句），也可由模型/任意应用显式设置 |
 | 会话动态 | 每条根会话的最近用户消息、最近助手回复、消息数、目录、标题，跨会话可见 |
 | 系统提示注入 | 每个模型请求前注入一段 `## 共享记忆` 摘要（默认上限 1200 字符），模型因此“知道”其他会话/应用里发生过什么 |
-| 模型工具 | `memory_remember` / `memory_search` / `memory_forget` / `memory_current` |
+| 模型工具 | `memory_remember` / `memory_search` / `memory_forget` / `memory_update` / `memory_current` |
+| 查看编辑 UI | 浏览器打开 `/dsh-memory/ui`：浏览、搜索、编辑、删除、焦点编辑、导出 JSONL |
 | HTTP API | `http://127.0.0.1:<端口>/dsh-memory`（端口随 Harness 启动变化，见 `runtime.json`） |
 | MCP 桥 | `~/.dsh/shared-memory/mcp-server.mjs`，零依赖 stdio MCP 服务，供 Claude Desktop / Claude Code / Cursor / Codex 等接入 |
 
@@ -166,6 +168,23 @@ $ node ~/.dsh/shared-memory/mcp-server.mjs
 ```
 
 任何一端说「记住：…」或写入一条记忆，其余会话的下一个 step 就会在系统提示摘要里看到它。
+
+## 查看与编辑（UI）
+
+浏览器打开服务地址下的 **`/ui`** 即可（DSH 插件和独立 Hub 都提供同一个页面）：
+
+```
+http://127.0.0.1:<端口>/dsh-memory/ui
+# 独立 Hub 默认：http://127.0.0.1:7400/dsh-memory/ui
+```
+
+- 统计信息、当前焦点编辑（focus + 下一步）
+- 记忆列表：搜索、按 kind 过滤、加载更多、编辑（正文/类型/标签）、删除
+- `message` 原话缓存**只读**（可删除），避免破坏"原话"语义
+- 一键导出 JSONL 备份
+- 设置过 `apiToken` 时，页面会提示输入 token（只存在浏览器 localStorage）
+
+界面是纯静态 HTML/CSS/JS，无构建步骤；同源访问 API，所以也不需要改 CORS。
 
 ## 接入其他 AI 应用
 

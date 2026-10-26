@@ -24,7 +24,7 @@ export const name = 'shared-memory'
 export const inject = ['tools', 'systemPrompt', 'webServer']
 
 const PLUGIN_NAME = 'dsh-shared-memory'
-const VERSION = '1.1.0'
+const VERSION = '1.2.0'
 const DAY = 86400000
 
 /** Memory kinds accepted by `memory_remember` and the HTTP API. */
@@ -124,6 +124,18 @@ async function atomicWrite(target, body) {
     }
     throw error
   }
+}
+
+/** Cached single-file UI document, read from ./ui/index.html next to this module. */
+let uiHtmlCache
+async function readUiHtml() {
+  if (uiHtmlCache !== undefined) return uiHtmlCache
+  try {
+    uiHtmlCache = await fsp.readFile(new URL('./ui/index.html', import.meta.url), 'utf8')
+  } catch {
+    uiHtmlCache = '<!doctype html><meta charset="utf-8"><title>Shared Memory</title><h1>UI not installed</h1><p>ui/index.html is missing from this package.</p>'
+  }
+  return uiHtmlCache
 }
 
 /** Extract plain text from message content blocks. */
@@ -427,7 +439,7 @@ class SharedMemoryStore {
   }
 
   /** Search records with case-insensitive text/tag matching, newest first. */
-  search({ q = '', kind = [], tag = '', limit = 20, days = 0, session = '' } = {}) {
+  search({ q = '', kind = [], tag = '', limit = 20, offset = 0, days = 0, session = '' } = {}) {
     const query = typeof q === 'string' ? q.trim().toLowerCase() : ''
     const kinds = (Array.isArray(kind) ? kind : [kind]).filter((k) => typeof k === 'string' && ALL_KINDS.includes(k))
     const tagQuery = typeof tag === 'string' ? tag.trim().toLowerCase() : ''
@@ -446,7 +458,8 @@ class SharedMemoryStore {
     })
     const sorted = matches.slice().sort((a, b) => b.createdAt - a.createdAt)
     const max = Math.min(100, Math.max(1, Number.isFinite(limit) ? limit : 20))
-    return { items: sorted.slice(0, max), total: sorted.length }
+    const start = Math.max(0, Number.isFinite(offset) ? Math.floor(offset) : 0)
+    return { items: sorted.slice(start, start + max), total: sorted.length, offset: start, limit: max }
   }
 
   /** Delete records by id or by a filter. */
@@ -472,6 +485,58 @@ class SharedMemoryStore {
     await this.#rewriteMemories()
     this.#changed()
     return { deleted: beforeIds.size, ids: [...beforeIds] }
+  }
+
+  /**
+   * Edit one durable memory in place, preserving its id and createdAt.
+   * Captured raw messages are read-only (delete them instead of editing).
+   */
+  async update({ id, text, kind, tags } = {}) {
+    await this.ready
+    const record = this.records.find((entry) => entry.id === id)
+    if (!record) {
+      const error = new Error('记忆不存在')
+      error.statusCode = 404
+      throw error
+    }
+    if (record.kind === 'message') {
+      const error = new Error('原话缓存不可编辑（可以删除）')
+      error.statusCode = 400
+      throw error
+    }
+    if (text !== undefined) {
+      const cleanText = typeof text === 'string' ? text.trim() : ''
+      if (!cleanText) {
+        const error = new Error('text 不能为空')
+        error.statusCode = 400
+        throw error
+      }
+      if (cleanText.length > 8000) {
+        const error = new Error('text 最多 8000 字符')
+        error.statusCode = 400
+        throw error
+      }
+      record.text = cleanText
+    }
+    if (kind !== undefined) {
+      if (!REMEMBER_KINDS.includes(kind)) {
+        const error = new Error('kind 不合法')
+        error.statusCode = 400
+        throw error
+      }
+      record.kind = kind
+    }
+    if (tags !== undefined) record.tags = normalizeTags(tags)
+    record.updatedAt = Date.now()
+    await this.#rewriteMemories()
+    this.#changed()
+    return { ...record }
+  }
+
+  /** Serialize the whole store as JSONL (for the export endpoint). */
+  exportJsonl() {
+    if (!this.records.length) return ''
+    return this.records.map((record) => JSON.stringify(record)).join('\n') + '\n'
   }
 
   /** Read the current focus. */
@@ -948,6 +1013,32 @@ function createTools(store) {
       },
     },
     {
+      name: 'memory_update',
+      description:
+        'Edit one existing shared memory in place (text / kind / tags), preserving its id and creation time. Use it to correct or update a fact instead of forgetting and re-remembering. Captured raw messages (kind "message") are read-only and cannot be edited.',
+      parameters: {
+        id: { type: 'string', required: true, description: 'Exact memory id from memory_search.' },
+        text: { type: 'string', description: 'New text (non-empty when provided).' },
+        kind: { type: 'string', enum: REMEMBER_KINDS, description: 'New kind.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Replacement tag list.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['item'],
+          properties: { item: memoryOutputSchema },
+        },
+        render: (args, value) => [{ type: 'text', text: `已更新记忆（${value.item.kind}）：${clip(value.item.text, 200)}` }],
+      },
+      presentCall: (args) => ({ card: 'generic', title: '编辑共享记忆', kind: 'other', rawInput: args }),
+      async execute(args) {
+        if (typeof args.id !== 'string' || !args.id.trim()) throw new Error('id 必填')
+        const item = await store.update({ id: args.id.trim(), text: args.text, kind: args.kind, tags: args.tags })
+        return { item }
+      },
+    },
+    {
       name: 'memory_current',
       description:
         'Read or update what the user is doing RIGHT NOW, shared across all their AI sessions and apps. Call with no arguments at the start of a task to learn the current focus and what other sessions are doing; call with focus/nextSteps when the user states a new task or progress; use clear to drop a finished focus. Automatic activity is also captured, so a fresh focus is enough.',
@@ -1231,6 +1322,15 @@ function createApiHandler(store, config, diag) {
 
       await store.ready
 
+      if (sub === '/ui' && req.method === 'GET') {
+        const html = await readUiHtml()
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'text/html; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(html)
+        return
+      }
+
       if (sub === '/' && req.method === 'GET') {
         sendJson(res, 200, {
           name: PLUGIN_NAME,
@@ -1243,9 +1343,13 @@ function createApiHandler(store, config, diag) {
             'GET /api/recent',
             'GET /api/current',
             'GET /api/activity',
+            'GET /api/items',
+            'GET /api/export',
             'POST /api/remember',
+            'POST /api/update',
             'POST /api/forget',
             'POST /api/current',
+            'GET /ui',
           ],
         })
         return
@@ -1284,6 +1388,32 @@ function createApiHandler(store, config, diag) {
           session: url.searchParams.get('session') ?? '',
         })
         sendJson(res, 200, result)
+        return
+      }
+
+      if (sub === '/api/items' && req.method === 'GET') {
+        const limitParam = Number(url.searchParams.get('limit'))
+        const offsetParam = Number(url.searchParams.get('offset'))
+        const daysParam = Number(url.searchParams.get('days'))
+        const result = store.search({
+          q: url.searchParams.get('q') ?? '',
+          kind: listParam(url.searchParams, 'kind'),
+          tag: url.searchParams.get('tag') ?? '',
+          limit: Number.isFinite(limitParam) ? limitParam : 50,
+          offset: Number.isFinite(offsetParam) ? offsetParam : 0,
+          days: Number.isFinite(daysParam) ? daysParam : 0,
+          session: url.searchParams.get('session') ?? '',
+        })
+        sendJson(res, 200, result)
+        return
+      }
+
+      if (sub === '/api/export' && req.method === 'GET') {
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
+        res.setHeader('Content-Disposition', 'attachment; filename="shared-memory-export.jsonl"')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.end(store.exportJsonl())
         return
       }
 
@@ -1343,6 +1473,23 @@ function createApiHandler(store, config, diag) {
         return
       }
 
+      if (sub === '/api/update' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        if (typeof body.id !== 'string' || !body.id.trim()) {
+          sendError(res, 400, 'BAD_REQUEST', 'id 必填')
+          return
+        }
+        const item = await store.update({
+          id: body.id.trim(),
+          text: body.text,
+          kind: body.kind,
+          tags: body.tags,
+        })
+        await store.writeHumanDigest()
+        sendJson(res, 200, { item })
+        return
+      }
+
       if (sub === '/api/forget' && req.method === 'POST') {
         const body = await readJsonBody(req)
         const result = await store.forget({ id: body.id, q: body.q, kind: body.kind, before: body.before })
@@ -1350,7 +1497,7 @@ function createApiHandler(store, config, diag) {
         return
       }
 
-      if (['/api/digest', '/api/search', '/api/recent', '/api/activity', '/api/current'].includes(sub) && req.method === 'POST') {
+      if (['/api/digest', '/api/search', '/api/recent', '/api/activity', '/api/current', '/api/items', '/api/export'].includes(sub) && req.method === 'POST') {
         sendError(res, 405, 'METHOD_NOT_ALLOWED', '该路径只支持 GET')
         return
       }

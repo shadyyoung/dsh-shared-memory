@@ -7,7 +7,7 @@ A **cross-session, cross-app, cross-platform memory layer** (packaged as a DeepS
 - Shape: **Harness Host plugin** + **zero-dependency MCP stdio bridge** + **reusable agent skill**
 - Storage: `~/.dsh/shared-memory/`
 - Package / loader row: `@local/shared-memory` / `shared-memory`
-- Version: 1.1.0 · License: MIT
+- Version: 1.2.0 · License: MIT
 
 > The Chinese name is now **AI 跨平台记忆增强 1.0**; the English name stays **Shared Memory**. Internal identifiers (package, skill id, store path) are unchanged for compatibility.
 
@@ -73,6 +73,7 @@ Query "plugin": 3 matches, showing 3
 ├── index.js                  # Host plugin: capture / store / tools / prompt digest / HTTP API
 ├── cordis.patch.yml          # bundle row + default config
 ├── mcp/server.mjs            # zero-dependency MCP stdio bridge (copied to ~/.dsh/shared-memory/)
+├── ui/index.html             # browser viewer/editor (/dsh-memory/ui)
 ├── skills/shared-memory/     # reusable agent skill (WorkBuddy and friends)
 ├── docs/API.md               # frozen HTTP / storage / MCP contract
 ├── docs/CONNECT-APPS.md      # per-app setup guides
@@ -132,7 +133,8 @@ Prerequisites: DeepSeek Harness Desktop (Cordis plugin system, `plugin_manager`)
 | Current focus | One structured "what is the user doing now" document, updated automatically from substantive messages or explicitly by any app |
 | Session activity | Latest user/assistant message, message count, cwd and title per root session — visible across sessions |
 | Prompt digest | Injects `## Shared Memory` (≤1200 chars) into every model request; `text` is a function, so new memories appear on the next step |
-| Model tools | `memory_remember` / `memory_search` / `memory_forget` / `memory_current` |
+| Model tools | `memory_remember` / `memory_search` / `memory_forget` / `memory_update` / `memory_current` |
+| Viewer / editor UI | Browser page at `/dsh-memory/ui`: browse, search, edit, delete, focus editor, JSONL export |
 | HTTP API | `http://127.0.0.1:<port>/dsh-memory` (port from `runtime.json`) |
 | MCP bridge | `~/.dsh/shared-memory/mcp-server.mjs`, zero dependencies, stdio JSON-RPC |
 

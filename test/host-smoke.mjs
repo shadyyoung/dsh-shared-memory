@@ -108,7 +108,7 @@ const run = (name, args = {}) => {
 }
 
 progress('tools-assert')
-assert.deepEqual([...tools.keys()].sort(), ['memory_current', 'memory_forget', 'memory_remember', 'memory_search'])
+assert.deepEqual([...tools.keys()].sort(), ['memory_current', 'memory_forget', 'memory_remember', 'memory_search', 'memory_update'])
 console.log('ok tools registered:', [...tools.keys()].join(', '))
 
 progress('section-assert')
@@ -191,6 +191,18 @@ const afterForget = await run('memory_search', { q: '直接给结论' })
 assert.equal(afterForget.total, 0)
 console.log('ok tools: remember/search/current/forget')
 
+progress('update')
+const toEdit = await run('memory_remember', { text: '需要被修改的旧记忆', kind: 'note' })
+const edited = await run('memory_update', { id: toEdit.item.id, text: '修改后的记忆正文', kind: 'project', tags: ['edited'] })
+assert.equal(edited.item.id, toEdit.item.id)
+assert.equal(edited.item.text, '修改后的记忆正文')
+assert.equal(edited.item.kind, 'project')
+assert.deepEqual(edited.item.tags, ['edited'])
+assert.ok(edited.item.updatedAt)
+const missing = await run('memory_update', { id: 'mem_does_not_exist', text: 'x' }).then(() => null, (error) => error)
+assert.ok(missing, 'updating a missing id must reject')
+console.log('ok tool: memory_update')
+
 progress('digest')
 const digest = section.text()
 assert.match(digest, /## 共享记忆/)
@@ -226,6 +238,39 @@ const httpCurrent = await api('/api/current')
 assert.equal(httpCurrent.body.focus.text, '实现共享记忆插件 v1')
 assert.equal(httpCurrent.body.activity.length, 1)
 assert.ok(Array.isArray(httpCurrent.body.recent))
+
+progress('http-update')
+const httpUpdate = await api('/api/update', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ id: edited.item.id, text: 'HTTP 更新后的记忆', tags: ['http-edited'] }),
+})
+assert.equal(httpUpdate.status, 200)
+assert.equal(httpUpdate.body.item.text, 'HTTP 更新后的记忆')
+assert.deepEqual(httpUpdate.body.item.tags, ['http-edited'])
+const missingUpdate = await api('/api/update', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ id: 'mem_does_not_exist', text: 'x' }),
+})
+assert.equal(missingUpdate.status, 404)
+const itemsPage = await api('/api/items?limit=2&offset=0')
+assert.equal(itemsPage.status, 200)
+assert.equal(itemsPage.body.limit, 2)
+assert.equal(itemsPage.body.offset, 0)
+assert.ok(itemsPage.body.items.length <= 2)
+
+progress('http-export-ui')
+const exportRes = await fetch(origin + '/dsh-memory/api/export')
+assert.equal(exportRes.status, 200)
+const exportBody = await exportRes.text()
+assert.match(exportBody, /HTTP 更新后的记忆/)
+const uiRes = await fetch(origin + '/dsh-memory/ui')
+assert.equal(uiRes.status, 200)
+const uiHtml = await uiRes.text()
+assert.match(uiHtml, /共享记忆/)
+assert.match(uiHtml, /api\/items/)
+console.log('ok HTTP: update / items / export / ui')
 
 progress('http-current-set')
 const setCurrent = await api('/api/current', {

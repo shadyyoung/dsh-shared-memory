@@ -95,6 +95,16 @@ node standalone/server.mjs --port 7400 [--host 127.0.0.1] [--store DIR] [--token
 - MCP 桥、Cursor、Codex、WorkBuddy 的配置无需修改（都通过 `runtime.json` 发现地址）。
 - 单写者约束不变：**同一个 store 目录不要同时运行 Hub 和 DSH 插件**。
 
+## 查看 / 编辑 UI
+
+`ui/index.html` 是一个**单文件、无构建**的静态页面，由 HTTP 层在 `/ui` 路径返回；插件和独立 Hub 都提供同一个页面。
+
+- 同源调用 `/api/*`，不引入新服务、不需要改 CORS。
+- 编辑走 `POST /api/update`（原地修改、保留 id/创建时间）；删除走 `POST /api/forget`。
+- `message` 原话缓存只读（可删），避免破坏"原话"语义。
+- `apiToken` 启用时，页面本身匿名可打开，读写请求在页面内输入 token 后携带 `Authorization: Bearer`（仅存 localStorage）。
+- 页面用原生 DOM API 渲染（`textContent`），不拼接 HTML，避免把记忆内容当 HTML 执行。
+
 ## 安全与隐私
 
 - 默认只监听回环地址（127.0.0.1）；需要跨机器访问时配置 `apiToken` 并要求 `Authorization: Bearer`。

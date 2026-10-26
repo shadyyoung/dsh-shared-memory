@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.2.0 — 2026-10-26
+
+### 新增 / Added
+
+- **查看 / 编辑 UI**：`GET /dsh-memory/ui` 单文件页面（`ui/index.html`，无构建）——统计、焦点编辑、搜索/过滤、编辑正文/类型/标签、删除、加载更多、导出 JSONL；`apiToken` 模式下页面内输入 token。
+- **新 HTTP 接口**：`POST /api/update`（按 id 原地编辑，保留 id 与创建时间）、`GET /api/items`（分页：limit/offset）、`GET /api/export`（JSONL 下载）。
+- **新模型工具**：`memory_update`（纠正/更新旧记忆，而不是 forget + remember）。
+- 搜索接口新增 `offset` 分页字段。
+- `message` 原话缓存只读（可删除、不可编辑）。
+
+### 测试 / Tests
+
+- host-smoke 覆盖 `memory_update`、`/api/update`、404、`/api/items` 分页、`/api/export`、`/ui`。
+- standalone-smoke 覆盖 Hub 上的 update / UI / export。
+- 三平台 CI 继续跑（ubuntu / windows / macos × Node 20/22）。
+
 ## v1.1.0 — 2026-10-26
 
 ### 新增 / Added
