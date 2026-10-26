@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-6C5CE7)
 ![MCP stdio](https://img.shields.io/badge/MCP-stdio-16A34A)
+![CI](https://github.com/shadyyoung/dsh-shared-memory/actions/workflows/ci.yml/badge.svg)
 
 **跨会话、跨 AI 应用、跨平台**的记忆增强层（DeepSeek Harness 插件形态）：让**所有会话**（包括不同工作区、不同会话）和**其他 AI 应用**共用同一份记忆 —— 记住用户说过的话、长期偏好、正在做的项目，以及“现在要做的事”。
 
