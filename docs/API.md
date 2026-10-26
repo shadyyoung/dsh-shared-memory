@@ -1,4 +1,4 @@
-# AI 跨平台记忆增强 (CrossMemory) — 冻结接口约定 v1
+# AI 跨平台记忆增强 (Shared Memory) — 冻结接口约定 v1
 
 本文件是 Host 插件、MCP 桥、其他 AI 应用共同遵守的契约。改动前先改本文件。
 

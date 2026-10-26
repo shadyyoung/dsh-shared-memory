@@ -1,4 +1,4 @@
-# CrossMemory
+# Shared Memory
 
 [中文](README.md) | English
 
@@ -9,7 +9,7 @@ A **cross-session, cross-app, cross-platform memory layer** (packaged as a DeepS
 - Package / loader row: `@local/shared-memory` / `shared-memory`
 - Version: 1.0.0 · License: MIT
 
-> Formerly **Shared Memory**. The Chinese name is **AI 跨平台记忆增强 1.0**; internal identifiers (package, skill id, store path) are unchanged for compatibility.
+> The Chinese name is now **AI 跨平台记忆增强 1.0**; the English name stays **Shared Memory**. Internal identifiers (package, skill id, store path) are unchanged for compatibility.
 
 > **Not just a skill.** An agent skill is only the client-side adapter that teaches WorkBuddy (or any skill-aware agent) to call the plugin's local HTTP API. The memory service itself is the Harness plugin; other apps connect through the MCP bridge or HTTP.
 

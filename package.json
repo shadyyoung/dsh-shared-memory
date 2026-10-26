@@ -2,7 +2,7 @@
   "name": "@local/shared-memory",
   "version": "1.0.0",
   "private": true,
-  "description": "CrossMemory — cross-session, cross-app, cross-platform memory layer for DeepSeek Harness and other AI apps (Claude / Cursor / Codex / WorkBuddy) via local HTTP + MCP.",
+  "description": "Shared Memory (AI 跨平台记忆增强) — cross-session, cross-app, cross-platform memory layer for DeepSeek Harness and other AI apps (Claude / Cursor / Codex / WorkBuddy) via local HTTP + MCP.",
   "type": "module",
   "exports": {
     ".": "./index.js",

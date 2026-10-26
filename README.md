@@ -1,4 +1,4 @@
-# AI 跨平台记忆增强 · CrossMemory
+# AI 跨平台记忆增强 · Shared Memory
 
 [English](README.en.md) | 中文
 
@@ -13,7 +13,7 @@
 - 包名 / 行 id：`@local/shared-memory` / `shared-memory`
 - 版本：1.0.0 · License：MIT
 
-> 原名 **Shared Memory**，自 v1.0.0 起中文名改为 **AI 跨平台记忆增强**、英文名 **CrossMemory**；内部标识（包名、skill id、存储目录）保持不变，不影响已有安装与数据。
+> 原名 **共享记忆**，自 v1.0.0 起中文名改为 **AI 跨平台记忆增强 1.0**；**英文名保持 Shared Memory 不变**。内部标识（包名、skill id、存储目录）保持不变，不影响已有安装与数据。
 
 > 注意：它**不是**一个单独的 Agent Skill。Skill 只是「客户端适配层」——让 WorkBuddy / 其他支持 skills 的 Agent 学会调用本插件暴露的 HTTP API。真正的记忆服务是 Harness 插件，其他应用通过 MCP 桥或 HTTP 接入。
 

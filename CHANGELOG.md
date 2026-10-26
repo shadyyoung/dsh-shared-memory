@@ -4,7 +4,7 @@
 
 ### 名称 / Branding
 
-- 产品更名：中文 **AI 跨平台记忆增强 1.0**，英文 **CrossMemory**。
+- 中文项目名更改为 **AI 跨平台记忆增强 1.0**；**英文名保持 Shared Memory 不变**（CrossMemory 仅作为以后再考虑的候选，暂不采用）。
 - 仓库内展示名、README、locale、Release 标题同步更新。
 - 内部标识保持不变：包名 `@local/shared-memory`、loader 行 `shared-memory`、skill id `shared-memory`、存储目录 `~/.dsh/shared-memory`、runtime 服务名 `dsh-shared-memory`。
 
