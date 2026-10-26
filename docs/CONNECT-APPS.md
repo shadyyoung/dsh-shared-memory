@@ -1,4 +1,4 @@
-# 共享记忆 · 接入其他 AI 应用（MCP 桥）
+# AI 跨平台记忆增强 · 接入其他 AI 应用（MCP 桥）
 
 共享记忆的 HTTP API 跑在 **DeepSeek Harness 进程里**（本机默认 `http://127.0.0.1:62877/dsh-memory`）。
 `mcp-server.mjs` 是一个**零依赖的 MCP stdio 桥**：其他 AI 应用（Claude Desktop、Claude Code、Cursor、Codex CLI……）只要配置启动这个桥，就能读写同一份共享记忆。

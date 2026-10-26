@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Shared Memory",
-    "description": "Remembers the user's messages and current work across every session and other AI apps."
+    "title": "CrossMemory",
+    "description": "Cross-session, cross-app memory for every DeepSeek Harness session and other AI apps."
   }
 }

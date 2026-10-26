@@ -1,7 +1,7 @@
 ---
 name: shared-memory
 description: >
-  读取和写入跨会话、跨 AI 应用的共享记忆（DeepSeek Harness 提供）。
+  读取和写入跨会话、跨 AI 应用的共享记忆（AI 跨平台记忆增强 / CrossMemory，DeepSeek Harness 提供）。
   Use when 用户提到「记忆 / 记住 / 忘了 / 上次 / 之前说过 / 别的 AI / 共享记忆 / 我现在在做什么」，
   或需要了解用户在其它会话里的上下文、当前任务、长期偏好。
   只读写本机共享记忆 HTTP API，不联网、不修改其它数据。

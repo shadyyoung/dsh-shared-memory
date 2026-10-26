@@ -1,4 +1,4 @@
-# 共享记忆 · Shared Memory
+# AI 跨平台记忆增强 · CrossMemory
 
 [English](README.en.md) | 中文
 
@@ -6,12 +6,14 @@
 ![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-6C5CE7)
 ![MCP stdio](https://img.shields.io/badge/MCP-stdio-16A34A)
 
-DeepSeek Harness 插件（bundle）：让**所有会话**（包括不同工作区、不同会话）和**其他 AI 应用**共用同一份记忆 —— 记住用户说过的话、长期偏好、正在做的项目，以及“现在要做的事”。
+**跨会话、跨 AI 应用、跨平台**的记忆增强层（DeepSeek Harness 插件形态）：让**所有会话**（包括不同工作区、不同会话）和**其他 AI 应用**共用同一份记忆 —— 记住用户说过的话、长期偏好、正在做的项目，以及“现在要做的事”。
 
 - 形态：**DeepSeek Harness Host 插件（bundle）** + **零依赖 MCP stdio 桥** + **可复用 Agent Skill**
 - 存储位置：`~/.dsh/shared-memory/`
 - 包名 / 行 id：`@local/shared-memory` / `shared-memory`
 - 版本：1.0.0 · License：MIT
+
+> 原名 **Shared Memory**，自 v1.0.0 起中文名改为 **AI 跨平台记忆增强**、英文名 **CrossMemory**；内部标识（包名、skill id、存储目录）保持不变，不影响已有安装与数据。
 
 > 注意：它**不是**一个单独的 Agent Skill。Skill 只是「客户端适配层」——让 WorkBuddy / 其他支持 skills 的 Agent 学会调用本插件暴露的 HTTP API。真正的记忆服务是 Harness 插件，其他应用通过 MCP 桥或 HTTP 接入。
 

@@ -1,13 +1,15 @@
-# Shared Memory
+# CrossMemory
 
 [中文](README.md) | English
 
-A **DeepSeek Harness plugin (bundle)** that gives every session — and every other AI app — one shared memory: the user's messages, long-term preferences, ongoing projects, and "what I'm working on right now".
+A **cross-session, cross-app, cross-platform memory layer** (packaged as a DeepSeek Harness plugin today) that gives every session — and every other AI app — one shared memory: the user's messages, long-term preferences, ongoing projects, and "what I'm working on right now".
 
 - Shape: **Harness Host plugin** + **zero-dependency MCP stdio bridge** + **reusable agent skill**
 - Storage: `~/.dsh/shared-memory/`
 - Package / loader row: `@local/shared-memory` / `shared-memory`
 - Version: 1.0.0 · License: MIT
+
+> Formerly **Shared Memory**. The Chinese name is **AI 跨平台记忆增强 1.0**; internal identifiers (package, skill id, store path) are unchanged for compatibility.
 
 > **Not just a skill.** An agent skill is only the client-side adapter that teaches WorkBuddy (or any skill-aware agent) to call the plugin's local HTTP API. The memory service itself is the Harness plugin; other apps connect through the MCP bridge or HTTP.
 

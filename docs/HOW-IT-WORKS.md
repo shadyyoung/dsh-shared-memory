@@ -1,4 +1,4 @@
-# 工作原理 · How it works
+# AI 跨平台记忆增强 · 工作原理
 
 这份说明解释共享记忆插件**为什么这样设计**、数据怎么流动、边界在哪里。接口细节见 [API.md](API.md)，各应用接入见 [CONNECT-APPS.md](CONNECT-APPS.md)。
 
