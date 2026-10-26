@@ -1,0 +1,25 @@
+# Shared Memory bundle (共享记忆)
+#
+# Registers the Host plugin that:
+#   * captures user messages from every root session,
+#   * keeps one cross-session "current focus",
+#   * exposes memory_remember / memory_search / memory_forget / memory_current,
+#   * injects a compact digest into the system prompt,
+#   * serves /dsh-memory HTTP endpoints for other AI apps,
+#   * materializes the MCP stdio bridge at ~/.dsh/shared-memory/mcp-server.mjs.
+- insert:
+    - id: shared-memory
+      name: '@local/shared-memory'
+      config:
+        storeDir: ~/.dsh/shared-memory
+        captureUserMessages: true
+        messageRetentionDays: 30
+        promptDigest: true
+        maxDigestChars: 1200
+        maxStoredMessages: 3000
+        maxActivitySessions: 200
+        apiEnabled: true
+        apiPath: /dsh-memory
+        apiToken: ''
+        autoFocusMinutes: 90
+        writeHumanDigest: true

@@ -1,0 +1,12 @@
+node_modules/
+*.log
+*.bak
+*.bak-*
+.DS_Store
+# 运行数据与存储永远不进仓库
+runtime.json
+memories.jsonl
+activity.json
+focus.json
+digest.md
+token
