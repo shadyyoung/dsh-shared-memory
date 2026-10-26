@@ -7,7 +7,7 @@ A **cross-session, cross-app, cross-platform memory layer** (packaged as a DeepS
 - Shape: **Harness Host plugin** + **zero-dependency MCP stdio bridge** + **reusable agent skill**
 - Storage: `~/.dsh/shared-memory/`
 - Package / loader row: `@local/shared-memory` / `shared-memory`
-- Version: 1.0.0 · License: MIT
+- Version: 1.1.0 · License: MIT
 
 > The Chinese name is now **AI 跨平台记忆增强 1.0**; the English name stays **Shared Memory**. Internal identifiers (package, skill id, store path) are unchanged for compatibility.
 
@@ -55,7 +55,7 @@ A hand-drawn version lives at [docs/assets/architecture.svg](docs/assets/archite
 ```text
 $ node ~/.dsh/shared-memory/mcp-server.mjs
 # MCP initialize -> tools/call memory_status
-Shared memory service is running (dsh-shared-memory v1.0.0)
+Shared memory service is running (dsh-shared-memory v1.1.0)
 Address: http://127.0.0.1:57545/dsh-memory (source: runtime.json)
 Store:   /Users/you/.dsh/shared-memory
 Stats:   34 memories / 18 captured messages / 3 sessions / focus: yes
@@ -81,6 +81,27 @@ Query "plugin": 3 matches, showing 3
 ├── test/mcp-smoke.mjs        # MCP protocol smoke test (35 assertions)
 ├── locale/en.json · zh.json
 └── icon.svg
+```
+
+## Two ways to run
+
+| Mode | Needs Harness | Capabilities | Best for |
+|---|---|---|---|
+| **Harness plugin** (default) | ✅ | auto-capture session messages, prompt digest, model tools, HTTP, MCP | day-to-day use inside DeepSeek Harness |
+| **Standalone hub** `standalone/server.mjs` | ❌ | storage / search / focus / HTTP / MCP (no auto-capture, no prompt digest) | Windows, Linux, servers, machines without Harness |
+
+Both use the same store (`~/.dsh/shared-memory/` by default) and the same `runtime.json`, so MCP client configs do not change.
+
+> ⚠️ Run only one of them per store directory — they share the single-writer assumption.
+
+### Quick start (standalone hub, cross-platform)
+
+Requires Node.js ≥ 18, nothing else.
+
+```bash
+git clone https://github.com/shadyyoung/dsh-shared-memory.git
+cd dsh-shared-memory
+node standalone/server.mjs            # http://127.0.0.1:7400/dsh-memory
 ```
 
 ## Install
@@ -165,8 +186,9 @@ Edit [cordis.patch.yml](cordis.patch.yml) and re-enable the bundle.
 curl -s "$(node -e "console.log(require(process.env.HOME+'/.dsh/shared-memory/runtime.json').apiBase)")/health"
 
 # local tests, no running Harness required
-node test/host-smoke.mjs   # tools, capture, prompt digest, HTTP API, auth
-node test/mcp-smoke.mjs    # MCP protocol, 35 assertions
+node test/host-smoke.mjs        # tools, capture, prompt digest, HTTP API, auth
+node test/mcp-smoke.mjs         # MCP protocol, 35 assertions
+node test/standalone-smoke.mjs  # standalone hub + MCP bridge, no Harness needed
 ```
 
 Verified on 2026-10-26 against DeepSeek Harness Desktop with Node 24: both suites pass; live HTTP `/health` OK; MCP `memory_status` / `memory_search` / `memory_current` read and write the same store; the digest is injected into the system prompt.

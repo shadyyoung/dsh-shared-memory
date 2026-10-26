@@ -24,7 +24,7 @@ export const name = 'shared-memory'
 export const inject = ['tools', 'systemPrompt', 'webServer']
 
 const PLUGIN_NAME = 'dsh-shared-memory'
-const VERSION = '1.0.0'
+const VERSION = '1.1.0'
 const DAY = 86400000
 
 /** Memory kinds accepted by `memory_remember` and the HTTP API. */
@@ -104,6 +104,26 @@ function isSubstantiveTask(text) {
   if (TRIVIAL_FOCUS.test(clean)) return false
   if (!/[\p{L}\p{N}]/u.test(clean)) return false
   return true
+}
+
+/**
+ * Replace a file atomically. `rename` is atomic on POSIX; on Windows an
+ * antivirus or indexer can briefly hold the target (EPERM/EACCES), so remove
+ * the target and retry once instead of failing the whole memory write.
+ */
+async function atomicWrite(target, body) {
+  const temp = `${target}.tmp`
+  await fsp.writeFile(temp, body, 'utf8')
+  try {
+    await fsp.rename(temp, target)
+  } catch (error) {
+    if (error && (error.code === 'EPERM' || error.code === 'EACCES')) {
+      await fsp.rm(target, { force: true })
+      await fsp.rename(temp, target)
+      return
+    }
+    throw error
+  }
 }
 
 /** Extract plain text from message content blocks. */
@@ -344,11 +364,7 @@ class SharedMemoryStore {
   async #rewriteMemories() {
     const body = this.records.map((record) => JSON.stringify(record)).join('\n')
     const target = this.file('memories.jsonl')
-    await this.#enqueue(async () => {
-      const temp = `${target}.tmp`
-      await fsp.writeFile(temp, body ? body + '\n' : '', 'utf8')
-      await fsp.rename(temp, target)
-    })
+    await this.#enqueue(() => atomicWrite(target, body ? body + '\n' : ''))
   }
 
   /** Append one memory record, deduplicating identical durable facts. */
@@ -482,12 +498,7 @@ class SharedMemoryStore {
         auto: auto === true,
       }
     }
-    await this.#enqueue(async () => {
-      const target = this.file('focus.json')
-      const temp = `${target}.tmp`
-      await fsp.writeFile(temp, JSON.stringify(this.focus) + '\n', 'utf8')
-      await fsp.rename(temp, target)
-    })
+    await this.#enqueue(() => atomicWrite(this.file('focus.json'), JSON.stringify(this.focus) + '\n'))
     this.#changed()
     return this.currentFocus()
   }
@@ -533,12 +544,7 @@ class SharedMemoryStore {
   async #saveActivity() {
     const snapshot = {}
     for (const [sessionId, entry] of this.activity) snapshot[sessionId] = entry
-    await this.#enqueue(async () => {
-      const target = this.file('activity.json')
-      const temp = `${target}.tmp`
-      await fsp.writeFile(temp, JSON.stringify(snapshot, null, 2) + '\n', 'utf8')
-      await fsp.rename(temp, target)
-    })
+    await this.#enqueue(() => atomicWrite(this.file('activity.json'), JSON.stringify(snapshot, null, 2) + '\n'))
   }
 
   /** Flush pending state and write the final human digest. */
@@ -641,15 +647,8 @@ class SharedMemoryStore {
   /** Persist runtime discovery data for the MCP bridge and other apps. */
   async writeRuntime(payload) {
     const target = this.file('runtime.json')
-    await this.#enqueue(async () => {
-      const temp = `${target}.tmp`
-      await fsp.writeFile(
-        temp,
-        JSON.stringify({ name: PLUGIN_NAME, version: VERSION, pid: process.pid, startedAt: this.startedAt, storeDir: this.dir, ...payload }, null, 2) + '\n',
-        'utf8',
-      )
-      await fsp.rename(temp, target)
-    })
+    const body = JSON.stringify({ name: PLUGIN_NAME, version: VERSION, pid: process.pid, startedAt: this.startedAt, storeDir: this.dir, ...payload }, null, 2) + '\n'
+    await this.#enqueue(() => atomicWrite(target, body))
   }
 
   /** Write the token file so local apps can authenticate without copy/paste. */
@@ -1364,3 +1363,6 @@ function createApiHandler(store, config, diag) {
     }
   }
 }
+
+// Shared with the standalone (no-DSH) server entry point.
+export { PLUGIN_NAME, VERSION, resolveConfig, atomicWrite, SharedMemoryStore, createApiHandler }

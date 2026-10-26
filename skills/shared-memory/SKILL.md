@@ -17,7 +17,7 @@ metadata:
 ## 定位服务地址
 
 ```bash
-BASE=$(node -e 'try{console.log(require(process.env.HOME+"/.dsh/shared-memory/runtime.json").apiBase)}catch(e){console.error("shared-memory-unavailable");process.exit(1)}')
+BASE=$(node -e 'try{console.log(require(require("os").homedir()+"/.dsh/shared-memory/runtime.json").apiBase)}catch(e){console.error("shared-memory-unavailable");process.exit(1)}')
 ```
 
 - 成功：得到形如 `http://127.0.0.1:55556/dsh-memory` 的地址（端口随 Harness 变化，不要写死）。

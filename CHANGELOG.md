@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.1.0 — 2026-10-26
+
+### 新增 / Added
+
+- **独立 Hub（跨平台）**：`standalone/server.mjs`，不依赖 DeepSeek Harness，复用同一份 store / HTTP API / MCP 桥；支持 `--port/--host/--store/--token`，启动时写 `runtime.json` 并复制桥。
+- **三平台 CI**：GitHub Actions 矩阵（ubuntu / windows / macos × Node 20/22）跑 host、MCP、standalone 三套测试。
+- **端到端测试**：`test/standalone-smoke.mjs`（真实起 Hub → HTTP → MCP 桥 → 校验 `runtime.json`）。
+
+### 修复 / Fixed（Windows 兼容）
+
+- 原子写 `rename` 在 Windows 被杀软/索引占用（EPERM/EACCES）时改为“删除目标 + 重试一次”。
+- MCP 桥与插件支持 `~\` 形式的主目录路径。
+- Skill 改用 `os.homedir()` 取主目录（Windows 上没有 `HOME` 环境变量）。
+- 版本号统一为 1.1.0（插件 / MCP 桥 / package）。
+
 ## Unreleased
 
 ### 名称 / Branding

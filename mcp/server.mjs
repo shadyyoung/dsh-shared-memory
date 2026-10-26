@@ -18,7 +18,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 
 const SERVER_NAME = 'dsh-shared-memory';
-const SERVER_VERSION = '1.0.0';
+const SERVER_VERSION = '1.1.0';
 const DEFAULT_API_BASE = 'http://127.0.0.1:62877/dsh-memory';
 const SUPPORTED_PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18'];
 const DEFAULT_PROTOCOL = '2024-11-05';
@@ -39,7 +39,7 @@ function log(...parts) {
 function expandHome(p) {
   if (typeof p !== 'string' || p === '') return p;
   if (p === '~') return os.homedir();
-  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
+  if (p.startsWith('~/') || p.startsWith('~\\')) return path.join(os.homedir(), p.slice(2));
   return p;
 }
 

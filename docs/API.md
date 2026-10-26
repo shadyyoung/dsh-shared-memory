@@ -53,7 +53,7 @@
 ```json
 {
   "name": "dsh-shared-memory",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "apiBase": "http://127.0.0.1:62877/dsh-memory",
   "origin": "http://127.0.0.1:62877",
   "storeDir": "/Users/<user>/.dsh/shared-memory",
@@ -91,7 +91,7 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 {
   "ok": true,
   "name": "dsh-shared-memory",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "startedAt": 1700000000000,
   "storeDir": "/Users/.../.dsh/shared-memory",
   "stats": { "memories": 42, "messages": 30, "sessions": 3, "hasFocus": true }

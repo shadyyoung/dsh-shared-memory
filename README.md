@@ -11,7 +11,7 @@
 - 形态：**DeepSeek Harness Host 插件（bundle）** + **零依赖 MCP stdio 桥** + **可复用 Agent Skill**
 - 存储位置：`~/.dsh/shared-memory/`
 - 包名 / 行 id：`@local/shared-memory` / `shared-memory`
-- 版本：1.0.0 · License：MIT
+- 版本：1.1.0 · License：MIT
 
 > 原名 **共享记忆**，自 v1.0.0 起中文名改为 **AI 跨平台记忆增强 1.0**；**英文名保持 Shared Memory 不变**。内部标识（包名、skill id、存储目录）保持不变，不影响已有安装与数据。
 
@@ -22,6 +22,7 @@
 ```
 ├── index.js                  # Host 插件：捕获/存储/工具/提示注入/HTTP API
 ├── cordis.patch.yml          # bundle 行声明与默认 config
+├── standalone/server.mjs     # 独立 Hub（不依赖 DSH，跨平台）
 ├── mcp/server.mjs            # 零依赖 MCP stdio 桥（复制到 ~/.dsh/shared-memory/）
 ├── skills/shared-memory/     # 可复用 Agent Skill（WorkBuddy 等）
 │   └── SKILL.md
@@ -31,6 +32,8 @@
 ├── docs/assets/architecture.svg
 ├── test/host-smoke.mjs       # Host 半集成测试
 ├── test/mcp-smoke.mjs        # MCP 协议冒烟测试（35 项断言）
+├── test/standalone-smoke.mjs # 独立 Hub + 桥的端到端测试
+├── .github/workflows/ci.yml  # 三平台 CI（macOS / Linux / Windows）
 ├── locale/en.json · zh.json  # 插件显示名
 ├── CHANGELOG.md
 └── icon.svg
@@ -75,6 +78,35 @@ flowchart LR
 
 > 设计取舍、数据流、生命周期、安全边界见 [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)。
 
+## 两种运行方式
+
+| 方式 | 需要 DSH | 能力 | 适合 |
+|---|---|---|---|
+| **DSH 插件**（默认） | ✅ | 自动捕获会话消息、系统提示注入、模型工具、HTTP、MCP | 日常在 DeepSeek Harness 里用 |
+| **独立 Hub** `standalone/server.mjs` | ❌ | 存储 / 搜索 / 当前焦点 / HTTP API / MCP（**无**自动捕获与提示注入） | Windows、Linux、服务器、不想装 DSH |
+
+两者读写**同一份** store（默认 `~/.dsh/shared-memory/`），并写同一份 `runtime.json`，所以 MCP 桥、Cursor、Codex、WorkBuddy 的配置完全不用改。
+
+> ⚠️ 同一个 store 目录**只能运行其中一个**（插件或 Hub），不要同时跑——单写者假设会被破坏。
+
+### 快速开始（独立 Hub，跨平台）
+
+要求：Node.js ≥ 18，无其他依赖。
+
+```bash
+git clone https://github.com/shadyyoung/dsh-shared-memory.git
+cd dsh-shared-memory
+node standalone/server.mjs            # http://127.0.0.1:7400/dsh-memory
+# 或指定端口/地址/存储目录
+node standalone/server.mjs --port 7400 --host 127.0.0.1 --store ~/.dsh/shared-memory
+```
+
+启动后：
+
+- HTTP：`http://127.0.0.1:7400/dsh-memory`（`/health`、`/api/*` 同契约，见 [docs/API.md](docs/API.md)）
+- MCP：`node ~/.dsh/shared-memory/mcp-server.mjs`（Hub 启动时会把桥复制到 store 目录并写 `runtime.json`）
+- 数据：`~/.dsh/shared-memory/`
+
 ## 安装
 
 前置：DeepSeek Harness Desktop（含 `plugin_manager` / Cordis 插件体系）、Node.js ≥ 18。
@@ -97,7 +129,8 @@ flowchart LR
 
 ## 兼容性
 
-- 已在 DeepSeek Harness Desktop（`desktop` profile，插件 API 0.2.x）+ Node 24 验证；插件本身无 npm 依赖。
+- **独立 Hub**：macOS / Linux / Windows + Node.js ≥ 18；CI 三平台矩阵（`ubuntu-latest` / `windows-latest` / `macos-latest`）实测。
+- **DSH 插件**：DeepSeek Harness Desktop（`desktop` profile，插件 API 0.2.x），随 DSH 支持的平台走；插件本身无 npm 依赖。
 - 已验证接入：DeepSeek Harness 所有会话（读写）、WorkBuddy（读写）、Cursor（读写）、ChatGPT 桌面版 Codex（读写）。
 - 未支持：ChatGPT 纯聊天窗口 / 网页版（只支持远程 Connector）。
 
@@ -118,7 +151,7 @@ flowchart LR
 ```text
 $ node ~/.dsh/shared-memory/mcp-server.mjs
 # MCP initialize → tools/call memory_status
-共享记忆服务运行中（dsh-shared-memory v1.0.0）
+共享记忆服务运行中（dsh-shared-memory v1.1.0）
 地址：http://127.0.0.1:57545/dsh-memory（来源：runtime.json）
 存储目录：/Users/you/.dsh/shared-memory
 统计：34 条记忆 / 18 条原话 / 3 个会话 / 当前焦点：有
@@ -184,8 +217,9 @@ $ node ~/.dsh/shared-memory/mcp-server.mjs
 curl -s "$(node -e "console.log(require(process.env.HOME+'/.dsh/shared-memory/runtime.json').apiBase)")/health"
 
 # 2. 本地单元/集成测试（不依赖正在运行的 Harness）
-node test/host-smoke.mjs     # 工具、捕获、提示摘要、HTTP API、鉴权
-node test/mcp-smoke.mjs      # MCP 协议 35 项断言（自带 mock 服务）
+node test/host-smoke.mjs       # 工具、捕获、提示摘要、HTTP API、鉴权
+node test/mcp-smoke.mjs        # MCP 协议 35 项断言（自带 mock 服务）
+node test/standalone-smoke.mjs # 独立 Hub + MCP 桥端到端（无需 Harness）
 ```
 
 实测结果（2026-10-26）：两套测试全部通过；运行中的 Harness 上 HTTP `/health` 正常，MCP 桥 `memory_status` / `memory_search` / `memory_current` 可读写同一份数据，系统提示已注入共享记忆摘要。

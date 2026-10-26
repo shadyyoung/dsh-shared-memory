@@ -83,6 +83,18 @@
 - 端口变化：桥每次请求都重新读 `runtime.json`，所以 Harness 换端口后不需要重启其他应用。
 - Harness 未运行：桥返回可读错误「共享记忆服务未运行」；启动后自动恢复。
 
+## 独立 Hub（不依赖 DSH）
+
+`standalone/server.mjs` 复用同一个 `SharedMemoryStore` 与 HTTP handler，只是没有 DSH 的 `session/event` 捕获和 `systemPrompt` 注入：
+
+```
+node standalone/server.mjs --port 7400 [--host 127.0.0.1] [--store DIR] [--token T]
+```
+
+- 启动时写 `runtime.json`、复制 `mcp-server.mjs`、生成 `digest.md`，与插件行为一致。
+- MCP 桥、Cursor、Codex、WorkBuddy 的配置无需修改（都通过 `runtime.json` 发现地址）。
+- 单写者约束不变：**同一个 store 目录不要同时运行 Hub 和 DSH 插件**。
+
 ## 安全与隐私
 
 - 默认只监听回环地址（127.0.0.1）；需要跨机器访问时配置 `apiToken` 并要求 `Authorization: Bearer`。

@@ -15,7 +15,20 @@
 
 ---
 
-## 第 1 步：启动 DeepSeek Harness（必须先做）
+## 第 1 步：启动记忆服务（二选一）
+
+有两种方式，任选其一（**同一个 store 目录只能跑一个**）：
+
+- **A. DeepSeek Harness（默认）**：插件激活后自动提供 HTTP API。
+- **B. 独立 Hub（不需要 DSH，跨平台）**：
+  ```bash
+  node standalone/server.mjs --port 7400
+  ```
+  它同样写 `~/.dsh/shared-memory/runtime.json`，所以下面所有 MCP 配置都不用改。
+
+> 下面的检查命令两种方式都适用，只要把 `.../dsh-memory` 换成对应地址（Hub 默认端口 7400）。
+
+### 如果走 A：确认 DeepSeek Harness 已启动
 
 HTTP API **不是一个独立后台服务**，它由 DeepSeek Harness 进程提供。所以：
 
@@ -30,7 +43,7 @@ curl -s http://127.0.0.1:62877/dsh-memory/health
 期望返回类似：
 
 ```json
-{"ok":true,"name":"dsh-shared-memory","version":"1.0.0","startedAt":1700000000000,"storeDir":"$HOME/.dsh/shared-memory","stats":{"memories":0,"messages":0,"sessions":0,"hasFocus":false}}
+{"ok":true,"name":"dsh-shared-memory","version":"1.1.0","startedAt":1700000000000,"storeDir":"$HOME/.dsh/shared-memory","stats":{"memories":0,"messages":0,"sessions":0,"hasFocus":false}}
 ```
 
 - `ok: true` → 继续第 2 步。
@@ -82,7 +95,7 @@ printf '%s\n' \
 期望输出两行 JSON；第二行里的 `content[0].text` 应该出现：
 
 ```
-共享记忆服务运行中（dsh-shared-memory v1.0.0）
+共享记忆服务运行中（dsh-shared-memory v1.1.0）
 地址：http://127.0.0.1:62877/dsh-memory ...
 ```
 
@@ -280,7 +293,7 @@ ChatGPT 聊天侧**不能连接本机 stdio MCP**（只支持 OpenAI 服务器�
 在任意一个已配置的应用里：
 
 1. 让它调用 **`memory_status`**。
-   - 成功：返回「共享记忆服务运行中（dsh-shared-memory v1.0.0）」+ 存储目录 + 统计。
+   - 成功：返回「共享记忆服务运行中（dsh-shared-memory v1.1.0）」+ 存储目录 + 统计。
    - 失败：见下方排错表。
 2. 让它调用 **`memory_remember`** 写入 `{ "text": "我偏好先给结论", "kind": "preference" }`。
 3. 换一个应用，让它调用 **`memory_search`**（`q: "结论"`），应该能搜到刚才那条。
