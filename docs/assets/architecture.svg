@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="Shared Memory architecture">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748B"/>
+    </marker>
+    <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6C5CE7"/>
+    </marker>
+    <style>
+      .box { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; rx: 12; }
+      .box-accent { fill: #F4F2FF; stroke: #6C5CE7; stroke-width: 2; rx: 12; }
+      .box-store { fill: #F0FDF4; stroke: #16A34A; stroke-width: 2; rx: 12; }
+      .grp { fill: #F8FAFC; stroke: #E2E8F0; stroke-width: 1.5; rx: 16; }
+      .t { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #0F172A; }
+      .tt { font-size: 17px; font-weight: 700; }
+      .ts { font-size: 13px; fill: #475569; }
+      .tm { font-size: 12.5px; fill: #475569; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .lbl { font-size: 12px; fill: #64748B; }
+      .line { stroke: #64748B; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+      .line-accent { stroke: #6C5CE7; stroke-width: 2; fill: none; marker-end: url(#arrow-accent); }
+      .title { font-size: 26px; font-weight: 800; }
+      .sub { font-size: 13px; fill: #64748B; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="720" fill="#FFFFFF"/>
+  <text class="t title" x="48" y="58">Shared Memory · 共享记忆</text>
+  <text class="t sub" x="48" y="84">One memory store for every DeepSeek Harness session and every other AI app — via local HTTP + MCP.</text>
+
+  <!-- Other AI apps -->
+  <rect class="grp" x="40" y="120" width="230" height="430"/>
+  <text class="t ts" x="60" y="150" font-weight="700">其他 AI 应用 · Other AI apps</text>
+
+  <rect class="box" x="60" y="176" width="190" height="62"/>
+  <text class="t tt" x="78" y="202">WorkBuddy</text>
+  <text class="t ts" x="78" y="222">skill + Bash/curl</text>
+
+  <rect class="box" x="60" y="256" width="190" height="62"/>
+  <text class="t tt" x="78" y="282">Cursor</text>
+  <text class="t ts" x="78" y="302">MCP stdio client</text>
+
+  <rect class="box" x="60" y="336" width="190" height="62"/>
+  <text class="t tt" x="78" y="362">ChatGPT Codex</text>
+  <text class="t ts" x="78" y="382">MCP stdio client</text>
+
+  <rect class="box" x="60" y="416" width="190" height="62"/>
+  <text class="t tt" x="78" y="442">Claude Desktop / Code</text>
+  <text class="t ts" x="78" y="462">MCP stdio client</text>
+
+  <text class="t lbl" x="60" y="512">纯 ChatGPT 聊天 / 网页：不支持</text>
+  <text class="t lbl" x="60" y="530">（仅支持远程 Connector）</text>
+
+  <!-- DSH process -->
+  <rect class="grp" x="360" y="120" width="520" height="560"/>
+  <text class="t ts" x="384" y="150" font-weight="700">DeepSeek Harness 进程 · single writer</text>
+
+  <rect class="box-accent" x="384" y="176" width="470" height="120"/>
+  <text class="t tt" x="406" y="206">共享记忆插件 · @local/shared-memory</text>
+  <text class="t ts" x="406" y="230">SharedMemoryStore · 内存缓存 + 串行写队列</text>
+  <text class="t ts" x="406" y="252">去重 / 保留期 / 当前焦点 / 检索</text>
+  <text class="t tm" x="406" y="276">memories.jsonl · focus.json · activity.json</text>
+
+  <rect class="box" x="384" y="326" width="220" height="86"/>
+  <text class="t tt" x="404" y="352">HTTP API</text>
+  <text class="t tm" x="404" y="376">GET/POST /dsh-memory/api/*</text>
+  <text class="t ts" x="404" y="398">health · digest · search · current</text>
+
+  <rect class="box" x="634" y="326" width="220" height="86"/>
+  <text class="t tt" x="654" y="352">MCP 桥</text>
+  <text class="t tm" x="654" y="376">mcp-server.mjs (stdio)</text>
+  <text class="t ts" x="654" y="398">自动发现 runtime.json 端口</text>
+
+  <rect class="box" x="384" y="442" width="220" height="86"/>
+  <text class="t tt" x="404" y="468">系统提示注入</text>
+  <text class="t ts" x="404" y="490">systemPrompt.section order 700</text>
+  <text class="t ts" x="404" y="512">每个 step 重新生成，≤1200 字</text>
+
+  <rect class="box" x="634" y="442" width="220" height="86"/>
+  <text class="t tt" x="654" y="468">模型工具</text>
+  <text class="t tm" x="654" y="490">memory_remember / search</text>
+  <text class="t tm" x="654" y="512">forget / current · digest · status</text>
+
+  <rect class="box" x="384" y="560" width="470" height="72"/>
+  <text class="t tt" x="406" y="588">会话事件捕获</text>
+  <text class="t ts" x="406" y="610">ctx.on('session/event') → user/message（跳过子代理/合成消息）</text>
+
+  <text class="t lbl" x="384" y="660">提示注入：每个模型请求前把“关于用户 / 当前焦点 / 最近动态 / 最近记忆”重新喂给模型</text>
+
+  <!-- Storage -->
+  <rect class="box-store" x="930" y="176" width="230" height="190"/>
+  <text class="t tt" x="952" y="206">~/.dsh/shared-memory/</text>
+  <text class="t tm" x="952" y="234">memories.jsonl</text>
+  <text class="t ts" x="952" y="254">一行一条记忆（唯一写者）</text>
+  <text class="t tm" x="952" y="282">focus.json</text>
+  <text class="t ts" x="952" y="302">当前焦点 + nextSteps</text>
+  <text class="t tm" x="952" y="330">activity.json</text>
+  <text class="t ts" x="952" y="350">每会话最近动态</text>
+
+  <rect class="box" x="930" y="392" width="230" height="120"/>
+  <text class="t tt" x="952" y="420">runtime.json</text>
+  <text class="t ts" x="952" y="442">apiBase / origin / token</text>
+  <text class="t ts" x="952" y="462">供 MCP 桥与其他应用发现服务</text>
+  <text class="t tm" x="952" y="490">digest.md · README.md</text>
+
+  <rect class="box" x="930" y="536" width="230" height="96"/>
+  <text class="t tt" x="952" y="564">两层记忆策略</text>
+  <text class="t ts" x="952" y="586">原话缓存：30 天过期</text>
+  <text class="t ts" x="952" y="606">关键记忆：模型判断后永久</text>
+
+  <!-- arrows -->
+  <path class="line" d="M250 207 L384 226"/>
+  <path class="line" d="M250 287 L384 300" marker-end="url(#arrow)"/>
+  <path class="line" d="M250 367 L384 367"/>
+  <path class="line" d="M250 447 L384 400"/>
+  <path class="line-accent" d="M854 369 L930 300"/>
+  <path class="line-accent" d="M854 485 L930 340"/>
+  <path class="line-accent" d="M619 560 C 660 560, 660 300, 619 296"/>
+  <path class="line-accent" d="M619 296 L384 296"/>
+  <path class="line" d="M854 230 L930 230"/>
+
+  <text class="t lbl" x="380" y="130"> </text>
+</svg>

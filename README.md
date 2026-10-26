@@ -1,5 +1,11 @@
 # 共享记忆 · Shared Memory
 
+[English](README.en.md) | 中文
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-6C5CE7)
+![MCP stdio](https://img.shields.io/badge/MCP-stdio-16A34A)
+
 DeepSeek Harness 插件（bundle）：让**所有会话**（包括不同工作区、不同会话）和**其他 AI 应用**共用同一份记忆 —— 记住用户说过的话、长期偏好、正在做的项目，以及“现在要做的事”。
 
 - 形态：**DeepSeek Harness Host 插件（bundle）** + **零依赖 MCP stdio 桥** + **可复用 Agent Skill**
@@ -18,12 +24,54 @@ DeepSeek Harness 插件（bundle）：让**所有会话**（包括不同工作�
 ├── skills/shared-memory/     # 可复用 Agent Skill（WorkBuddy 等）
 │   └── SKILL.md
 ├── docs/API.md               # 冻结的 HTTP / 存储 / MCP 约定
+├── docs/HOW-IT-WORKS.md      # 工作原理与设计说明
 ├── docs/CONNECT-APPS.md      # 各 AI 应用接入说明
+├── docs/assets/architecture.svg
 ├── test/host-smoke.mjs       # Host 半集成测试
 ├── test/mcp-smoke.mjs        # MCP 协议冒烟测试（35 项断言）
 ├── locale/en.json · zh.json  # 插件显示名
+├── CHANGELOG.md
 └── icon.svg
 ```
+
+## 架构
+
+```mermaid
+flowchart LR
+    subgraph Apps["其他 AI 应用"]
+        WB[WorkBuddy<br/>skill + curl]
+        CUR[Cursor<br/>MCP stdio]
+        CDX[ChatGPT Codex<br/>MCP stdio]
+        CL[Claude Desktop / Code<br/>MCP stdio]
+    end
+
+    subgraph DSH["DeepSeek Harness 进程"]
+        EV[会话事件<br/>session/event]
+        PLUG[共享记忆插件<br/>SharedMemoryStore]
+        PROMPT[系统提示摘要<br/>order 700 · 每个 step]
+        TOOLS[memory_* 工具]
+        HTTP[HTTP API<br/>/dsh-memory]
+        MCP[MCP 桥<br/>mcp-server.mjs]
+    end
+
+    STORE[(~/.dsh/shared-memory<br/>memories.jsonl · focus.json · activity.json)]
+
+    EV --> PLUG
+    PLUG <--> STORE
+    PLUG --> PROMPT
+    TOOLS --> PLUG
+    WB --> HTTP
+    CUR --> MCP
+    CDX --> MCP
+    CL --> MCP
+    MCP --> HTTP
+    HTTP <--> PLUG
+    PROMPT --> LLM[模型请求]
+```
+
+![架构图](docs/assets/architecture.svg)
+
+> 设计取舍、数据流、生命周期、安全边界见 [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)。
 
 ## 安装
 
@@ -62,6 +110,26 @@ DeepSeek Harness 插件（bundle）：让**所有会话**（包括不同工作�
 | 模型工具 | `memory_remember` / `memory_search` / `memory_forget` / `memory_current` |
 | HTTP API | `http://127.0.0.1:<端口>/dsh-memory`（端口随 Harness 启动变化，见 `runtime.json`） |
 | MCP 桥 | `~/.dsh/shared-memory/mcp-server.mjs`，零依赖 stdio MCP 服务，供 Claude Desktop / Claude Code / Cursor / Codex 等接入 |
+
+## 演示
+
+```text
+$ node ~/.dsh/shared-memory/mcp-server.mjs
+# MCP initialize → tools/call memory_status
+共享记忆服务运行中（dsh-shared-memory v1.0.0）
+地址：http://127.0.0.1:57545/dsh-memory（来源：runtime.json）
+存储目录：/Users/you/.dsh/shared-memory
+统计：34 条记忆 / 18 条原话 / 3 个会话 / 当前焦点：有
+
+# tools/call memory_search { "q": "插件" }
+查询“插件”：共 3 条，显示 3 条
+
+- [project · 12 分钟前] 共享记忆插件已开源到 GitHub…
+- [note · 1 小时前] 首次安装失败原因：output.schema 用了参数 DSL 的 required 写法…
+- [profile · 2 小时前] 用户偏好中文、希望所有 AI 共用一份记忆…
+```
+
+任何一端说「记住：…」或写入一条记忆，其余会话的下一个 step 就会在系统提示摘要里看到它。
 
 ## 接入其他 AI 应用
 
@@ -145,3 +213,7 @@ JsonSchemaError: unsupported JSON schema:
 - HTTP 服务依附 Harness 进程：Harness 未运行时，MCP 桥会返回“服务未运行”的可读错误；启动 Harness 后自动恢复，不需要重启其他应用。
 - 默认只监听本机；需要跨机器访问时请自行加 `apiToken` 并处理端口暴露。
 - 记忆是明文 JSONL（`~/.dsh/shared-memory/`），包含用户消息原文；不希望落盘的场景可用 `captureUserMessages: false`。
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。

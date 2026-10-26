@@ -10,15 +10,20 @@
     "./icon": "./icon.svg"
   },
   "files": [
-    "index.js",
-    "cordis.patch.yml",
-    "mcp/server.mjs",
-    "docs/*.md",
-    "locale/*.json",
-    "icon.svg",
-    "skills/*/SKILL.md",
+    ".gitignore",
+    "CHANGELOG.md",
     "LICENSE",
-    ".gitignore"
+    "README.en.md",
+    "README.md",
+    "cordis.patch.yml",
+    "docs/*.md",
+    "docs/HOW-IT-WORKS.md",
+    "docs/assets/*.svg",
+    "icon.svg",
+    "index.js",
+    "locale/*.json",
+    "mcp/server.mjs",
+    "skills/*/SKILL.md"
   ],
   "dsh": {
     "bundle": {

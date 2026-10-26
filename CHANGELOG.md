@@ -1,0 +1,36 @@
+# Changelog
+
+## v1.0.0 — 2026-10-26
+
+首个公开版本 · First public release.
+
+### 新增 / Added
+
+- **DeepSeek Harness Host 插件**：监听 `session/event` 自动捕获根会话用户消息，维护跨会话「当前焦点」和会话动态。
+- **系统提示注入**：每个模型请求前注入 `## 共享记忆` 摘要（用户画像 / 当前焦点 / 最近会话 / 最近记忆，≤1200 字符）。
+- **模型工具**：`memory_remember` / `memory_search` / `memory_forget` / `memory_current`。
+- **本地 HTTP API**：`/dsh-memory` 下的 `health` / `digest` / `search` / `recent` / `current` / `activity` / `remember` / `forget`，可选 Bearer token。
+- **零依赖 MCP stdio 桥**：自动发现 `runtime.json`，为 Claude Desktop / Claude Code / Cursor / ChatGPT Codex 提供 `memory_*` 工具和 `memory://digest`、`memory://current` 资源。
+- **可复用 Agent Skill**：`skills/shared-memory/SKILL.md`，供 WorkBuddy 等用 Bash + curl 接入。
+- **两层记忆策略**：原话只做 30 天短期缓存；长期记忆只保留模型判断后的条目。
+- **测试**：`test/host-smoke.mjs`（工具/捕获/提示/HTTP/鉴权）+ `test/mcp-smoke.mjs`（35 项协议断言）。
+
+### 已验证 / Verified
+
+- DeepSeek Harness 所有会话：读写 + 提示注入 ✅
+- WorkBuddy（技能 + Bash/curl）：读写 ✅
+- Cursor（MCP）：读写 ✅
+- ChatGPT 桌面版 Codex（MCP）：读写 ✅
+- ChatGPT 纯聊天 / 网页：不支持本机 stdio MCP（需远程 Connector）❌
+
+### 修复 / Fixed
+
+- 工具 `output.schema` 使用参数 DSL 的 `required: true` 写法被 dsh-tools 的严格 JSON Schema 校验拒绝（`JsonSchemaError`）；改为标准 JSON Schema（对象级 `required` 数组）。
+- `forget()` 在写队列里重复入队导致自锁；改为直接 `await #rewriteMemories()`。
+- 自动焦点会被「继续 / 再来一次」等短句覆盖；新增 `isSubstantiveTask()` 过滤。
+
+### 已知限制 / Known limitations
+
+- 无独立 Web UI 面板。
+- HTTP 服务依附 Harness 进程。
+- 原话缓存为明文；可通过 `captureUserMessages: false` 关闭。
