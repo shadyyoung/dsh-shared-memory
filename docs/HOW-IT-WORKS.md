@@ -105,6 +105,14 @@ node standalone/server.mjs --port 7400 [--host 127.0.0.1] [--store DIR] [--token
 - `apiToken` 启用时，页面本身匿名可打开，读写请求在页面内输入 token 后携带 `Authorization: Bearer`（仅存 localStorage）。
 - 页面用原生 DOM API 渲染（`textContent`），不拼接 HTML，避免把记忆内容当 HTML 执行。
 
+## 检索与相关性摘要
+
+- **索引**：写内存中的倒排索引（`SearchIndex`），中文按 bigram 切分、英文按词，tags 也参与；每次写入/更新/purge 增量维护，启动时从 `memories.jsonl` 重建（10k 条约 20–100ms）。
+- **评分**：BM25（k1=1.2, b=0.75）+ 完整子串命中加成 + 使用次数加成（`1 + 0.15·ln(1+count)`）。
+- **排序**：有 `q` 时默认相关性排序，`sort=newest` 回到时间序；无 `q` 时时间倒序。
+- **摘要注入**：摘要里新增「相关记忆（与当前话题）」——用最近一条用户消息（10 分钟内）或当前焦点做查询，召回 top `maxRelevantMemories`（默认 4）条，放在「最近记住的事」之后；无匹配时退回最近记忆。
+- **使用统计**：记忆被检索返回/摘要注入时累计 `usage.count`（`usage.json`，5 秒防抖落盘），用于相关性加权和 UI 展示。
+
 ## 软删除与编辑历史
 
 - `forget` 默认只写入 `deletedAt`（进回收站），过 `trashRetentionDays` 天（默认 30）才物理删除；`purge: true` 立即删除。

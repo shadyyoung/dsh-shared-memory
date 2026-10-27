@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.4.0 — 2026-10-27
+
+### 新增 / Added
+
+- **BM25 检索**：内存倒排索引（中文 bigram + 英文词 + tags），相关性排序；`sort=relevance|newest`；无查询词时仍按时间倒序。
+- **相关性摘要注入**：摘要新增「相关记忆（与当前话题）」，用最近用户消息/当前焦点做查询，召回 top `maxRelevantMemories`（默认 4）条。
+- **使用统计**：检索/注入命中的记忆累计 `usage.count`（`usage.json` 防抖落盘），参与相关性加权，UI 显示使用次数。
+- **UI**：搜索高亮、排序切换（相关度/最新）、回收站「清空」。
+- **接口**：`GET /api/items|/api/search` 支持 `sort`，返回项带 `usage`；新增 `POST /api/purge-trash`。
+- **性能基准**：`test/search-bench.mjs`（10k 条建索引 + 查询），纳入 CI。
+
+### 测试 / Tests
+
+- host-smoke：TF 排序、`sort=newest`、标签索引、使用计数、清空回收站、相关性摘要段落。
+- bench：10k 条索引构建 < 12s（实测约 20–100ms），平均查询 < 80ms（实测 <1ms）。
+- 三平台 CI 继续跑（含 bench）。
+
+### 配置 / Config
+
+- `maxRelevantMemories`（默认 4，0=关闭相关记忆注入）
+
 ## v1.3.0 — 2026-10-27
 
 ### 新增 / Added

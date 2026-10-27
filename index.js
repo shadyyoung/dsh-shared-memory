@@ -24,7 +24,7 @@ export const name = 'shared-memory'
 export const inject = ['tools', 'systemPrompt', 'webServer']
 
 const PLUGIN_NAME = 'dsh-shared-memory'
-const VERSION = '1.3.0'
+const VERSION = '1.4.0'
 const DAY = 86400000
 
 /** Memory kinds accepted by `memory_remember` and the HTTP API. */
@@ -42,6 +42,7 @@ const DEFAULT_CONFIG = {
   maxActivitySessions: 200,
   trashRetentionDays: 30,
   maxRevisions: 20,
+  maxRelevantMemories: 4,
   apiEnabled: true,
   apiPath: '/dsh-memory',
   apiToken: '',
@@ -72,6 +73,7 @@ function resolveConfig(raw) {
     maxActivitySessions: Math.round(number(src.maxActivitySessions, DEFAULT_CONFIG.maxActivitySessions, 10, 5000)),
     trashRetentionDays: Math.round(number(src.trashRetentionDays, DEFAULT_CONFIG.trashRetentionDays, 0, 3650)),
     maxRevisions: Math.round(number(src.maxRevisions, DEFAULT_CONFIG.maxRevisions, 0, 100)),
+    maxRelevantMemories: Math.round(number(src.maxRelevantMemories, DEFAULT_CONFIG.maxRelevantMemories, 0, 20)),
     apiEnabled: bool(src.apiEnabled, DEFAULT_CONFIG.apiEnabled),
     apiPath,
     apiToken: typeof src.apiToken === 'string' ? src.apiToken.trim() : '',
@@ -263,6 +265,105 @@ function normalizeActivity(value) {
   }
 }
 
+/** Tokenize text for BM25: latin words plus CJK bigrams (unigram when a run is 1 char). */
+function tokenizeForIndex(value) {
+  const text = String(value || '').toLowerCase()
+  const tokens = []
+  for (const match of text.matchAll(/[a-z0-9_]+/g)) {
+    if (match[0].length >= 2) tokens.push(match[0])
+  }
+  for (const match of text.matchAll(/[\u4e00-\u9fff]+/g)) {
+    const run = match[0]
+    if (run.length === 1) {
+      tokens.push(run)
+      continue
+    }
+    for (let index = 0; index + 1 < run.length; index++) tokens.push(run.slice(index, index + 2))
+  }
+  return tokens
+}
+
+/**
+ * In-memory inverted index with BM25 scoring. Records are indexed whether or
+ * not they sit in the trash; callers filter deleted records themselves so that
+ * `includeDeleted` searches still work.
+ */
+class SearchIndex {
+  constructor() {
+    this.postings = new Map()
+    this.docLengths = new Map()
+    this.totalLength = 0
+  }
+
+  #tokensOf(record) {
+    return tokenizeForIndex(`${record.text}\n${record.tags.join(' ')}`)
+  }
+
+  add(record) {
+    this.remove(record.id)
+    const tokens = this.#tokensOf(record)
+    if (!tokens.length) {
+      this.docLengths.set(record.id, 0)
+      return
+    }
+    const counts = new Map()
+    for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1)
+    for (const [token, tf] of counts) {
+      let docs = this.postings.get(token)
+      if (!docs) {
+        docs = new Map()
+        this.postings.set(token, docs)
+      }
+      docs.set(record.id, tf)
+    }
+    this.docLengths.set(record.id, tokens.length)
+    this.totalLength += tokens.length
+  }
+
+  remove(id) {
+    const length = this.docLengths.get(id)
+    if (length === undefined) return
+    this.docLengths.delete(id)
+    this.totalLength -= length
+    for (const [token, docs] of this.postings) {
+      if (!docs.delete(id)) continue
+      if (!docs.size) this.postings.delete(token)
+    }
+  }
+
+  reset(records = []) {
+    this.postings.clear()
+    this.docLengths.clear()
+    this.totalLength = 0
+    for (const record of records) this.add(record)
+  }
+
+  /** BM25 scores for one query; tokens absent from the index score zero. */
+  score(queryTokens) {
+    const scores = new Map()
+    const docCount = this.docLengths.size
+    if (!docCount || !queryTokens.length) return scores
+    const averageLength = this.totalLength / docCount || 1
+    const seen = new Set()
+    const k1 = 1.2
+    const b = 0.75
+    for (const token of queryTokens) {
+      if (seen.has(token)) continue
+      seen.add(token)
+      const docs = this.postings.get(token)
+      if (!docs || !docs.size) continue
+      const idf = Math.log(1 + (docCount - docs.size + 0.5) / (docs.size + 0.5))
+      for (const [id, tf] of docs) {
+        const dl = this.docLengths.get(id) ?? averageLength
+        const denom = tf + k1 * (1 - b + (b * dl) / averageLength)
+        const value = idf * ((tf * (k1 + 1)) / denom)
+        scores.set(id, (scores.get(id) ?? 0) + value)
+      }
+    }
+    return scores
+  }
+}
+
 /**
  * The file-backed memory store. One instance per Host process; every mutation
  * goes through a single promise chain so the JSONL file and JSON documents
@@ -279,6 +380,11 @@ class SharedMemoryStore {
     this.chain = Promise.resolve()
     this.activityTimer = null
     this.changeHandler = null
+    this.index = new SearchIndex()
+    this.usage = new Map()
+    this.usageTimer = null
+    this.lastUserText = ''
+    this.lastUserAt = 0
     this.ready = this.#init()
   }
 
@@ -291,6 +397,7 @@ class SharedMemoryStore {
     await this.#loadMemories()
     await this.#loadFocus()
     await this.#loadActivity()
+    await this.#loadUsage()
     await this.#pruneTrash()
   }
 
@@ -313,6 +420,7 @@ class SharedMemoryStore {
       }
     }
     this.records = records
+    this.index.reset(records)
     await this.#pruneMessages()
   }
 
@@ -345,6 +453,54 @@ class SharedMemoryStore {
     } catch {
       // No activity yet.
     }
+  }
+
+  async #loadUsage() {
+    try {
+      const raw = JSON.parse(await fsp.readFile(this.file('usage.json'), 'utf8'))
+      if (!isPlainObject(raw)) return
+      for (const [id, value] of Object.entries(raw)) {
+        if (!isPlainObject(value)) continue
+        this.usage.set(id, {
+          count: Number.isFinite(value.count) ? value.count : 0,
+          lastAt: Number.isFinite(value.lastAt) ? value.lastAt : 0,
+        })
+      }
+    } catch {
+      // No usage data yet.
+    }
+  }
+
+  /** Read one record's usage counters (0 when never injected/retrieved). */
+  usageFor(id) {
+    const entry = this.usage.get(id)
+    return entry ? { count: entry.count, lastAt: entry.lastAt } : { count: 0, lastAt: 0 }
+  }
+
+  #touchUsage(ids) {
+    if (!ids || !ids.length) return
+    const now = Date.now()
+    for (const id of ids) {
+      const entry = this.usage.get(id) ?? { count: 0, lastAt: 0 }
+      entry.count += 1
+      entry.lastAt = now
+      this.usage.set(id, entry)
+    }
+    this.#scheduleUsageSave()
+  }
+
+  #scheduleUsageSave() {
+    if (this.usageTimer) return
+    this.usageTimer = setTimeout(() => {
+      this.usageTimer = null
+      void this.#saveUsage().catch(() => undefined)
+    }, 5000)
+    this.usageTimer.unref?.()
+  }
+
+  async #saveUsage() {
+    const snapshot = Object.fromEntries(this.usage)
+    await this.#enqueue(() => atomicWrite(this.file('usage.json'), JSON.stringify(snapshot, null, 2) + '\n'))
   }
 
   /** Run a mutation on the serialized write chain. */
@@ -450,6 +606,7 @@ class SharedMemoryStore {
       createdAt: Date.now(),
     }
     this.records.push(record)
+    this.index.add(record)
     await this.#enqueue(() =>
       fsp.appendFile(this.file('memories.jsonl'), JSON.stringify(record) + '\n', 'utf8'),
     )
@@ -479,6 +636,9 @@ class SharedMemoryStore {
       createdAt: Date.now(),
     }
     this.records.push(record)
+    this.index.add(record)
+    this.lastUserText = clip(cleanText, 400)
+    this.lastUserAt = Date.now()
     const appended = this.#enqueue(() =>
       fsp.appendFile(this.file('memories.jsonl'), JSON.stringify(record) + '\n', 'utf8'),
     )
@@ -490,14 +650,59 @@ class SharedMemoryStore {
     return record
   }
 
-  /** Search records with case-insensitive text/tag matching, newest first. */
-  search({ q = '', kind = [], tag = '', limit = 20, offset = 0, days = 0, session = '', includeDeleted = false, onlyDeleted = false } = {}) {
-    const query = typeof q === 'string' ? q.trim().toLowerCase() : ''
+  /** Permanently remove every record currently in the trash. */
+  async purgeTrash() {
+    await this.ready
+    const ids = this.records.filter((record) => record.deletedAt).map((record) => record.id)
+    if (!ids.length) return { deleted: 0, ids: [] }
+    const removing = new Set(ids)
+    this.records = this.records.filter((record) => !removing.has(record.id))
+    for (const id of ids) this.index.remove(id)
+    await this.#rewriteMemories()
+    this.#changed()
+    return { deleted: ids.length, ids }
+  }
+
+  /**
+   * Pick the memories most relevant to `query` for prompt injection.
+   * Falls back to the most recent durable memories when nothing matches.
+   */
+  relevantMemories(query, limit = this.config.maxRelevantMemories) {
+    const max = Math.max(0, Math.min(20, Number.isFinite(limit) ? limit : 4))
+    if (!max) return []
+    const active = this.records.filter((record) => !record.deletedAt && record.kind !== 'message')
+    if (!active.length) return []
+    const cleanQuery = typeof query === 'string' ? query.trim() : ''
+    if (!cleanQuery) return active.sort((a, b) => b.createdAt - a.createdAt).slice(0, max)
+    const scores = this.index.score(tokenizeForIndex(cleanQuery))
+    const lower = cleanQuery.toLowerCase()
+    const ranked = []
+    for (const record of active) {
+      let score = scores.get(record.id) ?? 0
+      if (`${record.text}\n${record.tags.join(' ')}`.toLowerCase().includes(lower)) score += 2
+      if (score <= 0) continue
+      ranked.push({ record, score })
+    }
+    ranked.sort((a, b) => b.score - a.score || b.record.createdAt - a.record.createdAt)
+    const picked = ranked.slice(0, max).map((entry) => entry.record)
+    if (!picked.length) return active.sort((a, b) => b.createdAt - a.createdAt).slice(0, max)
+    this.#touchUsage(picked.map((record) => record.id))
+    return picked
+  }
+
+  /**
+   * Search records. With a query, BM25 relevance is the default ordering
+   * (`sort: 'newest'` switches back to time order); without a query results are
+   * newest-first.
+   */
+  search({ q = '', kind = [], tag = '', limit = 20, offset = 0, days = 0, session = '', includeDeleted = false, onlyDeleted = false, sort = '' } = {}) {
+    const query = typeof q === 'string' ? q.trim() : ''
     const kinds = (Array.isArray(kind) ? kind : [kind]).filter((k) => typeof k === 'string' && ALL_KINDS.includes(k))
     const tagQuery = typeof tag === 'string' ? tag.trim().toLowerCase() : ''
     const sessionQuery = typeof session === 'string' ? session.trim() : ''
     const since = Number.isFinite(days) && days > 0 ? Date.now() - days * DAY : 0
-    const matches = this.records.filter((record) => {
+    const order = sort === 'newest' || sort === 'time' ? 'newest' : sort === 'relevance' ? 'relevance' : ''
+    const matchesFilter = (record) => {
       if (onlyDeleted) {
         if (!record.deletedAt) return false
       } else if (!includeDeleted && record.deletedAt) {
@@ -507,16 +712,47 @@ class SharedMemoryStore {
       if (since && record.createdAt < since) return false
       if (sessionQuery && record.source.sessionId !== sessionQuery) return false
       if (tagQuery && !record.tags.some((t) => t.toLowerCase() === tagQuery)) return false
-      if (query) {
-        const haystack = `${record.text}\n${record.tags.join(' ')}`.toLowerCase()
-        if (!haystack.includes(query)) return false
-      }
       return true
-    })
-    const sorted = matches.slice().sort((a, b) => b.createdAt - a.createdAt)
+    }
+
+    let ordered
+    if (query) {
+      const lower = query.toLowerCase()
+      const queryTokens = tokenizeForIndex(query)
+      const scores = queryTokens.length ? this.index.score(queryTokens) : new Map()
+      if (!queryTokens.length) {
+        // Extremely short queries (one latin char) have no tokens; fall back to substring.
+        ordered = this.records
+          .filter((record) => matchesFilter(record) && `${record.text}\n${record.tags.join(' ')}`.toLowerCase().includes(lower))
+          .sort((a, b) => b.createdAt - a.createdAt)
+        if (order === 'relevance') ordered.sort((a, b) => b.createdAt - a.createdAt)
+        const maxFallback = Math.min(100, Math.max(1, Number.isFinite(limit) ? limit : 20))
+        const startFallback = Math.max(0, Number.isFinite(offset) ? Math.floor(offset) : 0)
+        const pageFallback = ordered.slice(startFallback, startFallback + maxFallback)
+        this.#touchUsage(pageFallback.map((record) => record.id))
+        return { items: pageFallback, total: ordered.length, offset: startFallback, limit: maxFallback }
+      }
+      const candidates = []
+      for (const record of this.records) {
+        if (!matchesFilter(record)) continue
+        let score = scores.get(record.id) ?? 0
+        if (`${record.text}\n${record.tags.join(' ')}`.toLowerCase().includes(lower)) score += 3
+        if (score <= 0) continue
+        const usageBoost = 1 + 0.15 * Math.log1p(this.usageFor(record.id).count)
+        candidates.push({ record, score: score * usageBoost })
+      }
+      const useNewest = order === 'newest'
+      candidates.sort((a, b) => (useNewest ? b.record.createdAt - a.record.createdAt : b.score - a.score || b.record.createdAt - a.record.createdAt))
+      ordered = candidates.map((entry) => entry.record)
+    } else {
+      ordered = this.records.filter(matchesFilter).sort((a, b) => b.createdAt - a.createdAt)
+    }
+
     const max = Math.min(100, Math.max(1, Number.isFinite(limit) ? limit : 20))
     const start = Math.max(0, Number.isFinite(offset) ? Math.floor(offset) : 0)
-    return { items: sorted.slice(start, start + max), total: sorted.length, offset: start, limit: max }
+    const page = ordered.slice(start, start + max)
+    this.#touchUsage(page.map((record) => record.id))
+    return { items: page, total: ordered.length, offset: start, limit: max }
   }
 
   /**
@@ -545,6 +781,7 @@ class SharedMemoryStore {
     if (!beforeIds.size) return { deleted: 0, ids: [], mode: purge ? 'purge' : 'trash' }
     if (purge) {
       this.records = this.records.filter((record) => !beforeIds.has(record.id))
+      for (const removedId of beforeIds) this.index.remove(removedId)
     } else {
       const now = Date.now()
       for (const record of this.records) {
@@ -568,6 +805,7 @@ class SharedMemoryStore {
     if (!record.deletedAt) return { item: { ...record }, restored: false }
     delete record.deletedAt
     record.updatedAt = Date.now()
+    this.index.add(record)
     await this.#rewriteMemories()
     this.#changed()
     return { item: { ...record }, restored: true }
@@ -626,6 +864,7 @@ class SharedMemoryStore {
       const cap = this.config.maxRevisions
       record.revisions = cap > 0 ? revisions.slice(-cap) : undefined
       record.updatedAt = Date.now()
+      this.index.add(record)
       await this.#rewriteMemories()
       this.#changed()
     }
@@ -717,8 +956,17 @@ class SharedMemoryStore {
       clearTimeout(this.activityTimer)
       this.activityTimer = null
     }
+    if (this.usageTimer) {
+      clearTimeout(this.usageTimer)
+      this.usageTimer = null
+    }
     try {
       await this.#saveActivity()
+    } catch {
+      // Best effort on shutdown.
+    }
+    try {
+      await this.#saveUsage()
     } catch {
       // Best effort on shutdown.
     }
@@ -778,6 +1026,18 @@ class SharedMemoryStore {
     if (recent.length) {
       push('### 最近记住的事')
       for (const record of recent) push(`- [${record.kind} · ${relativeTime(record.createdAt, now)}] ${sanitizeMemoryText(record.text, 180)}`)
+      push('')
+    }
+    const relevanceQuery =
+      (this.lastUserAt && now - this.lastUserAt < 10 * 60000 ? this.lastUserText : '') ||
+      (focus ? focus.text : '') ||
+      (activity.length ? activity[0].lastUser || '' : '')
+    const relevant = this.relevantMemories(relevanceQuery)
+    if (relevant.length) {
+      push('### 相关记忆（与当前话题）')
+      for (const record of relevant) {
+        push(`- [${record.kind} · ${relativeTime(record.createdAt, now)}] ${sanitizeMemoryText(record.text, 170)}`)
+      }
       push('')
     }
     const retention = this.config.messageRetentionDays > 0 ? `${this.config.messageRetentionDays} 天后过期` : '长期保留'
@@ -1072,6 +1332,7 @@ function createTools(store) {
           },
           tag: { type: 'string', description: 'Exact tag filter.' },
           limit: { type: 'integer', description: 'Max results (default 10, max 50).' },
+          sort: { type: 'string', enum: ['relevance', 'newest'], description: 'Ordering: relevance (default when q is set) or newest.' },
         },
         additionalProperties: false,
       },
@@ -1094,6 +1355,7 @@ function createTools(store) {
           kind: args.kind ? [args.kind] : [],
           tag: args.tag ?? '',
           limit: Math.min(50, Math.max(1, args.limit ?? 10)),
+          sort: args.sort ?? '',
         })
       },
     },
@@ -1500,6 +1762,7 @@ function createApiHandler(store, config, diag) {
             'POST /api/update',
             'POST /api/forget',
             'POST /api/restore',
+            'POST /api/purge-trash',
             'POST /api/current',
             'GET /ui',
           ],
@@ -1539,8 +1802,12 @@ function createApiHandler(store, config, diag) {
           days: Number.isFinite(daysParam) ? daysParam : 0,
           session: url.searchParams.get('session') ?? '',
           includeDeleted: isTruthyParam(url.searchParams.get('includeDeleted')),
+          sort: url.searchParams.get('sort') ?? '',
         })
-        sendJson(res, 200, result)
+        sendJson(res, 200, {
+          ...result,
+          items: result.items.map((record) => ({ ...record, usage: store.usageFor(record.id) })),
+        })
         return
       }
 
@@ -1558,8 +1825,12 @@ function createApiHandler(store, config, diag) {
           session: url.searchParams.get('session') ?? '',
           onlyDeleted: isTruthyParam(url.searchParams.get('deleted')),
           includeDeleted: isTruthyParam(url.searchParams.get('includeDeleted')),
+          sort: url.searchParams.get('sort') ?? '',
         })
-        sendJson(res, 200, result)
+        sendJson(res, 200, {
+          ...result,
+          items: result.items.map((record) => ({ ...record, usage: store.usageFor(record.id) })),
+        })
         return
       }
 
@@ -1624,6 +1895,13 @@ function createApiHandler(store, config, diag) {
         return
       }
 
+      if (sub === '/api/purge-trash' && req.method === 'POST') {
+        const result = await store.purgeTrash()
+        await store.writeHumanDigest()
+        sendJson(res, 200, result)
+        return
+      }
+
       if (sub === '/api/remember' && req.method === 'POST') {
         const body = await readJsonBody(req)
         if (typeof body.text !== 'string' || !body.text.trim()) {
@@ -1679,4 +1957,4 @@ function createApiHandler(store, config, diag) {
 }
 
 // Shared with the standalone (no-DSH) server entry point.
-export { PLUGIN_NAME, VERSION, resolveConfig, atomicWrite, SharedMemoryStore, createApiHandler }
+export { PLUGIN_NAME, VERSION, resolveConfig, atomicWrite, SharedMemoryStore, createApiHandler, SearchIndex, tokenizeForIndex }

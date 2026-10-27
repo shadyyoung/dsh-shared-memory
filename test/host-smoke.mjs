@@ -241,6 +241,20 @@ assert.match(digest, /最近的会话动态/)
 assert.ok(digest.length <= 1200, `digest respects cap (${digest.length})`)
 console.log('ok prompt digest:', digest.length, 'chars')
 
+progress('relevance-digest')
+emit({
+  type: 'user/message',
+  seq: 99,
+  time: Date.now(),
+  data: { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '蓝鲸计划进度怎么样' }] },
+})
+await run('memory_remember', { text: '蓝鲸计划今天完成检索索引与相关性摘要', kind: 'project' })
+await sleep(120)
+const digestWithRelevance = section.text()
+assert.match(digestWithRelevance, /### 相关记忆/)
+assert.match(digestWithRelevance, /蓝鲸计划/)
+console.log('ok relevance digest section')
+
 progress('http-health')
 const health = await api('/health')
 assert.equal(health.status, 200)
@@ -291,6 +305,30 @@ assert.equal(itemsPage.status, 200)
 assert.equal(itemsPage.body.limit, 2)
 assert.equal(itemsPage.body.offset, 0)
 assert.ok(itemsPage.body.items.length <= 2)
+
+progress('http-relevance')
+const olderRanked = await run('memory_remember', { text: '排序词 排序词 排序词 相关性测试', kind: 'note' })
+await sleep(10)
+const newerRanked = await run('memory_remember', { text: '排序词 只出现一次 无关内容', kind: 'note' })
+const byRelevance = await api('/api/items?q=%E6%8E%92%E5%BA%8F%E8%AF%8D')
+assert.equal(byRelevance.status, 200)
+assert.equal(byRelevance.body.items[0].id, olderRanked.item.id, 'higher term frequency ranks first')
+assert.ok(byRelevance.body.items[0].usage.count >= 1, 'usage counter recorded for returned items')
+const byNewest = await api('/api/items?q=%E6%8E%92%E5%BA%8F%E8%AF%8D&sort=newest')
+assert.equal(byNewest.body.items[0].id, newerRanked.item.id, 'sort=newest overrides relevance')
+
+const tagOnly = await run('memory_remember', { text: '这里完全没有那个词', kind: 'note', tags: ['uniquetagzz'] })
+const tagSearch = await api('/api/search?q=uniquetagzz')
+assert.equal(tagSearch.body.total, 1, 'tags are indexed')
+assert.equal(tagSearch.body.items[0].id, tagOnly.item.id)
+
+await run('memory_forget', { id: tagOnly.item.id })
+const purgedTrash = await api('/api/purge-trash', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+assert.equal(purgedTrash.status, 200)
+assert.ok(purgedTrash.body.deleted >= 1)
+const emptyTrash = await api('/api/items?deleted=1')
+assert.equal(emptyTrash.body.total, 0)
+console.log('ok relevance / sort / usage / purge-trash')
 
 progress('http-export-ui')
 const exportRes = await fetch(origin + '/dsh-memory/api/export')

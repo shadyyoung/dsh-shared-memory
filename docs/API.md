@@ -53,7 +53,7 @@
 ```json
 {
   "name": "dsh-shared-memory",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "apiBase": "http://127.0.0.1:62877/dsh-memory",
   "origin": "http://127.0.0.1:62877",
   "storeDir": "/Users/<user>/.dsh/shared-memory",
@@ -88,6 +88,7 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 | POST | `/api/remember` | 新增记忆 |
 | POST | `/api/forget` | 删除记忆（默认进回收站，`purge: true` 彻底删除） |
 | POST | `/api/restore` | 从回收站恢复记忆 |
+| POST | `/api/purge-trash` | 清空回收站（彻底删除） |
 | POST | `/api/current` | 设置/清除焦点 |
 
 ### GET /health
@@ -96,7 +97,7 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 {
   "ok": true,
   "name": "dsh-shared-memory",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "startedAt": 1700000000000,
   "storeDir": "/Users/.../.dsh/shared-memory",
   "stats": { "memories": 42, "messages": 30, "sessions": 3, "hasFocus": true }
@@ -111,8 +112,9 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 
 ### GET /api/search
 
-参数：`q`（大小写不敏感的子串，匹配 text/tags）、`kind`（可重复或逗号分隔）、
-`tag`、`limit`（默认 20，最大 100）、`days`（只返回最近 N 天）、`session`（精确匹配 source.sessionId）。
+参数：`q`（BM25 查询，支持中文/英文关键词）、`kind`（可重复或逗号分隔）、
+`tag`、`limit`（默认 20，最大 100）、`days`（只返回最近 N 天）、`session`（精确匹配 source.sessionId）、
+`sort`（`relevance` 默认 / `newest`）。返回项带 `usage: {count, lastAt}`。
 
 ```json
 { "items": [Memory], "total": 3, "query": "..." }
@@ -140,7 +142,8 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 { "items": [Memory], "total": 42, "offset": 0, "limit": 50 }
 ```
 
-参数：`q`、`kind`、`tag`、`limit`（默认 50，最大 100）、`offset`、`days`、`session`。
+参数：`q`、`kind`、`tag`、`limit`（默认 50，最大 100）、`offset`、`days`、`session`、`sort`（`relevance` 默认/`newest`）、`deleted`、`includeDeleted`。
+有 `q` 时默认 BM25 相关性排序（中文 bigram 分词，标签参与索引）；返回项带 `usage: {count, lastAt}`。
 
 ### POST /api/update
 

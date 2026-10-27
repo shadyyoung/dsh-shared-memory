@@ -28,3 +28,5 @@ jobs:
         run: node test/mcp-smoke.mjs
       - name: Standalone hub smoke
         run: node test/standalone-smoke.mjs
+      - name: Search index benchmark (10k records)
+        run: node test/search-bench.mjs

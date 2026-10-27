@@ -18,7 +18,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 
 const SERVER_NAME = 'dsh-shared-memory';
-const SERVER_VERSION = '1.3.0';
+const SERVER_VERSION = '1.4.0';
 const DEFAULT_API_BASE = 'http://127.0.0.1:62877/dsh-memory';
 const SUPPORTED_PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18'];
 const DEFAULT_PROTOCOL = '2024-11-05';
@@ -551,6 +551,11 @@ const TOOLS = [
           maximum: 100,
           description: '返回条数，默认 20，最大 100。Max results (default 20).',
         },
+        sort: {
+          type: 'string',
+          enum: ['relevance', 'newest'],
+          description: '排序：relevance（有查询词时默认，BM25 相关性）或 newest（时间倒序）。',
+        },
       },
       additionalProperties: false,
     },
@@ -721,8 +726,10 @@ async function runTool(name, args, cfg) {
       limit = Math.min(100, Math.max(1, limit));
       if (kind) requireValidKinds(kind);
 
+      const sort = asString(args.sort);
+      if (sort && sort !== 'relevance' && sort !== 'newest') throw new BridgeError('sort 只能是 relevance 或 newest。');
       const data = await httpRequest(cfg, 'GET', '/api/search', {
-        query: { q, kind, tag, limit },
+        query: { q, kind, tag, limit, sort },
       });
       return toolOk(formatSearch(data, { q }));
     }

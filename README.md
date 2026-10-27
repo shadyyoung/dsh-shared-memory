@@ -12,7 +12,7 @@
 - 形态：**DeepSeek Harness Host 插件（bundle）** + **零依赖 MCP stdio 桥** + **可复用 Agent Skill**
 - 存储位置：`~/.dsh/shared-memory/`
 - 包名 / 行 id：`@local/shared-memory` / `shared-memory`
-- 版本：1.3.0 · License：MIT
+- 版本：1.4.0 · License：MIT
 
 > 原名 **共享记忆**，自 v1.0.0 起中文名改为 **AI 跨平台记忆增强 1.0**；**英文名保持 Shared Memory 不变**。内部标识（包名、skill id、存储目录）保持不变，不影响已有安装与数据。
 
@@ -143,9 +143,10 @@ node standalone/server.mjs --port 7400 --host 127.0.0.1 --store ~/.dsh/shared-me
 | 自动捕获用户消息 | 监听 `session/event` 的 `user/message` 写成**短期原话缓存**（默认 30 天过期，跳过子代理与合成消息）；长期记忆只由模型主动 `memory_remember` 写入 |
 | 当前焦点 | 用户一说新的实质任务就自动更新（过滤“继续/再来一次”这类短句），也可由模型/任意应用显式设置 |
 | 会话动态 | 每条根会话的最近用户消息、最近助手回复、消息数、目录、标题，跨会话可见 |
-| 系统提示注入 | 每个模型请求前注入一段 `## 共享记忆` 摘要（默认上限 1200 字符，用 `<memory-data>` 围栏包裹并过滤疑似注入指令），模型因此“知道”其他会话/应用里发生过什么 |
+| 系统提示注入 | 每个模型请求前注入 `## 共享记忆` 摘要（≤1200 字符，`<memory-data>` 围栏 + 注入过滤），并用当前话题**按 BM25 相关性**挑出「相关记忆」一起注入 |
 | 模型工具 | `memory_remember` / `memory_search` / `memory_forget` / `memory_update` / `memory_restore` / `memory_current` |
-| 查看编辑 UI | 浏览器打开 `/dsh-memory/ui`：浏览、搜索、编辑、**回收站/恢复**、**编辑历史**、焦点编辑、导出 JSONL |
+| 查看编辑 UI | `/dsh-memory/ui`：搜索高亮、相关性/最新排序、编辑、回收站/恢复/清空、编辑历史、使用次数、导出 JSONL |
+| 检索 | **BM25 倒排索引**（中文 bigram + 英文词），相关性排序，标签参与索引；支持 `sort=relevance|newest` |
 | HTTP API | `http://127.0.0.1:<端口>/dsh-memory`（端口随 Harness 启动变化，见 `runtime.json`） |
 | MCP 桥 | `~/.dsh/shared-memory/mcp-server.mjs`，零依赖 stdio MCP 服务，供 Claude Desktop / Claude Code / Cursor / Codex 等接入 |
 
@@ -181,6 +182,9 @@ http://127.0.0.1:<端口>/dsh-memory/ui
 - 统计信息、当前焦点编辑（focus + 下一步）
 - 记忆列表：搜索、按 kind 过滤、加载更多、编辑（正文/类型/标签）、删除
 - `message` 原话缓存**只读**（可移到回收站），避免破坏"原话"语义
+- **相关性摘要**：摘要里新增「相关记忆（与当前话题）」，用最近一条用户消息/当前焦点做 BM25 查询召回
+- **使用统计**：返回/注入过的记忆累计使用次数，参与相关性加权，UI 显示"用过 N 次"
+- **回收站**：支持一键清空（`POST /api/purge-trash`）
 - **回收站**：删除默认是软删除（`trashRetentionDays` 天后彻底清理），可一键恢复或彻底删除
 - **编辑历史**：每次编辑保留上一版，可查看并恢复任意历史版本
 - 一键导出 JSONL 备份
@@ -233,6 +237,7 @@ http://127.0.0.1:<端口>/dsh-memory/ui
 | `writeHumanDigest` | `true` | 是否写 `digest.md` |
 | `trashRetentionDays` | `30` | 回收站保留天数，0=永久保留（需手动彻底删除） |
 | `maxRevisions` | `20` | 每条记忆保留的历史版本数，0=不保留 |
+| `maxRelevantMemories` | `4` | 摘要里「相关记忆」条数，0=关闭 |
 
 ## 验证
 

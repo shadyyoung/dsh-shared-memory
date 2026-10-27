@@ -120,9 +120,14 @@
     <div class="tabs">
       <button class="tab active" id="tabActive">记忆</button>
       <button class="tab" id="tabTrash">回收站</button>
+      <button class="tab hidden" id="emptyTrash" style="margin-left:auto;color:var(--danger)">清空回收站</button>
     </div>
     <div class="toolbar">
       <input type="text" id="search" class="grow" placeholder="搜索记忆内容或标签…"/>
+      <select id="sortMode" style="flex:0 0 120px">
+        <option value="">相关度优先</option>
+        <option value="newest">最新优先</option>
+      </select>
       <select id="kindFilter" style="flex:0 0 130px">
         <option value="">全部类型</option>
         <option value="profile">profile 画像</option>
@@ -147,7 +152,7 @@
 <script>
 (() => {
   const BASE = location.pathname.replace(/\/ui\/?$/, '') || '/dsh-memory'
-  const state = { q: '', kind: '', view: 'active', offset: 0, limit: 50, total: 0, items: [], editing: null, historyFor: null, token: localStorage.getItem('sm-token') || '' }
+  const state = { q: '', kind: '', sort: '', view: 'active', offset: 0, limit: 50, total: 0, items: [], editing: null, historyFor: null, token: localStorage.getItem('sm-token') || '' }
   const $ = (id) => document.getElementById(id)
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n }
   let toastTimer = null
@@ -157,6 +162,30 @@
   }
   const fmt = (ts) => { const d = Date.now() - ts; if (d < 6e4) return '刚刚'; if (d < 36e5) return Math.floor(d / 6e4) + ' 分钟前'; if (d < 864e5) return Math.floor(d / 36e5) + ' 小时前'; return Math.floor(d / 864e5) + ' 天前' }
   const shortId = (id) => (id || '').replace(/^(mem|msg)_/, '').slice(0, 8)
+
+  function highlightInto(node, text, q) {
+    const query = (q || '').trim()
+    if (!query) { node.textContent = text; return }
+    const terms = [query]
+    for (const part of query.split(/\s+/)) if (part && !terms.includes(part)) terms.push(part)
+    const lower = String(text).toLowerCase()
+    let index = 0
+    while (index < text.length) {
+      let found = -1
+      let foundLen = 0
+      for (const term of terms) {
+        const at = lower.indexOf(term.toLowerCase(), index)
+        if (at >= 0 && (found < 0 || at < found || (at === found && term.length > foundLen))) {
+          found = at
+          foundLen = term.length
+        }
+      }
+      if (found < 0) { node.append(document.createTextNode(text.slice(index))); break }
+      if (found > index) node.append(document.createTextNode(text.slice(index, found)))
+      node.append(el('mark', null, text.slice(found, found + foundLen)))
+      index = found + foundLen
+    }
+  }
 
   async function api(path, opts = {}) {
     const headers = Object.assign({}, opts.headers || {})
@@ -229,8 +258,11 @@
       return box
     }
     head.append(el('span', 'meta', item.updatedAt ? '已编辑' : ''))
+    if (item.usage && item.usage.count) head.append(el('span', 'meta', '用过 ' + item.usage.count + ' 次'))
     box.append(head)
-    box.append(el('div', 'item-text', item.text))
+    const body = el('div', 'item-text')
+    highlightInto(body, item.text, state.q)
+    box.append(body)
     if (item.tags && item.tags.length) {
       const tags = el('div', 'tags'); for (const t of item.tags) tags.append(el('span', 'tag', t)); box.append(tags)
     }
@@ -263,7 +295,9 @@
     item.revisions.slice().reverse().forEach((rev, index) => {
       const row = el('div', 'rev')
       row.append(el('div', 'meta', 'v' + (item.revisions.length - index) + ' · ' + fmt(rev.updatedAt) + ' · ' + rev.kind))
-      row.append(el('div', 'item-text', rev.text))
+      const revBody = el('div', 'item-text')
+      highlightInto(revBody, rev.text, state.q)
+      row.append(revBody)
       if (rev.tags && rev.tags.length) { const tags = el('div', 'tags'); for (const t of rev.tags) tags.append(el('span', 'tag', t)); row.append(tags) }
       const btn = el('button', 'small', '恢复此版本'); btn.onclick = () => restoreRevision(item, rev)
       row.append(btn)
@@ -287,6 +321,14 @@
     } catch (e) { toast(e.message) }
   }
 
+  async function emptyTrash() {
+    if (!confirm('清空回收站？里面的记忆会被彻底删除，无法恢复。')) return
+    try {
+      await api('/api/purge-trash', { method: 'POST', body: '{}' })
+      await refreshList(); await loadHealth(); toast('回收站已清空')
+    } catch (e) { toast(e.message) }
+  }
+
   async function purgeItem(item) {
     if (!confirm('彻底删除这条记忆？此操作不可恢复。\n\n' + item.text.slice(0, 120))) return
     try {
@@ -301,6 +343,7 @@
       if (state.q) params.set('q', state.q)
       if (state.kind) params.set('kind', state.kind)
       if (state.view === 'trash') params.set('deleted', '1')
+      if (state.sort) params.set('sort', state.sort)
       const res = await api('/api/items?' + params.toString())
       state.offset = 0
       state.items = res.items
@@ -318,6 +361,7 @@
       if (state.q) params.set('q', state.q)
       if (state.kind) params.set('kind', state.kind)
       if (state.view === 'trash') params.set('deleted', '1')
+      if (state.sort) params.set('sort', state.sort)
       const res = await api('/api/items?' + params.toString())
       renderList(res)
     } catch (e) { toast(e.message) }
@@ -367,6 +411,7 @@
     state.view = view; state.offset = 0; state.editing = null; state.historyFor = null
     $('tabActive').classList.toggle('active', view === 'active')
     $('tabTrash').classList.toggle('active', view === 'trash')
+    $('emptyTrash').classList.toggle('hidden', view !== 'trash')
     refreshList()
   }
 
@@ -374,6 +419,8 @@
   function bind() {
     $('tabActive').onclick = () => setView('active')
     $('tabTrash').onclick = () => setView('trash')
+    $('emptyTrash').onclick = emptyTrash
+    $('sortMode').onchange = (ev) => { state.sort = ev.target.value; refreshList() }
     $('refreshBtn').onclick = () => { refreshList(); loadFocus(); loadHealth() }
     $('exportBtn').onclick = exportAll
     $('tokenBtn').onclick = () => $('tokenPanel').classList.toggle('show')

@@ -20,6 +20,7 @@
         maxActivitySessions: 200
         trashRetentionDays: 30
         maxRevisions: 20
+        maxRelevantMemories: 4
         apiEnabled: true
         apiPath: /dsh-memory
         apiToken: ''
