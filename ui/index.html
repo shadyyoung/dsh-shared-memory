@@ -66,6 +66,13 @@
   .foot{color:var(--muted);font-size:12px;text-align:center;margin-top:22px}
   a{color:var(--accent)}
   .hidden{display:none!important}
+  .tabs{display:flex;gap:6px;margin-bottom:10px}
+  .tab{background:transparent;border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12.5px;color:var(--muted);cursor:pointer}
+  .tab.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+  .item.deleted{opacity:.72;border-style:dashed}
+  .history{margin-top:8px;border-top:1px dashed var(--border);padding-top:8px}
+  .rev{border:1px solid var(--border);border-radius:8px;padding:6px 9px;margin:6px 0}
+  .rev .item-text{font-size:12.5px;margin:2px 0 4px}
 </style>
 </head>
 <body>
@@ -110,6 +117,10 @@
 
   <div class="card">
     <h2>记忆列表</h2>
+    <div class="tabs">
+      <button class="tab active" id="tabActive">记忆</button>
+      <button class="tab" id="tabTrash">回收站</button>
+    </div>
     <div class="toolbar">
       <input type="text" id="search" class="grow" placeholder="搜索记忆内容或标签…"/>
       <select id="kindFilter" style="flex:0 0 130px">
@@ -136,7 +147,7 @@
 <script>
 (() => {
   const BASE = location.pathname.replace(/\/ui\/?$/, '') || '/dsh-memory'
-  const state = { q: '', kind: '', offset: 0, limit: 50, total: 0, items: [], editing: null, token: localStorage.getItem('sm-token') || '' }
+  const state = { q: '', kind: '', view: 'active', offset: 0, limit: 50, total: 0, items: [], editing: null, historyFor: null, token: localStorage.getItem('sm-token') || '' }
   const $ = (id) => document.getElementById(id)
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n }
   let toastTimer = null
@@ -166,7 +177,7 @@
     const wrap = $('stats'); wrap.textContent = ''
     const add = (label, value) => { const n = el('span'); n.append(el('b', null, String(value)), document.createTextNode(' ' + label)); wrap.append(n) }
     add('条记忆', s.memories || 0); add('条原话', s.messages || 0); add('个会话', s.sessions || 0)
-    add('焦点', s.hasFocus ? '有' : '无')
+    add('回收站', s.trash || 0); add('焦点', s.hasFocus ? '有' : '无')
     const v = el('span', 'muted', 'v' + (h.version || '')); wrap.append(v)
     $('apiBase').textContent = location.origin + BASE
   }
@@ -199,11 +210,13 @@
   }
 
   function renderItem(item) {
-    const box = el('div', 'item')
+    const deleted = Boolean(item.deletedAt)
+    const box = el('div', 'item' + (deleted ? ' deleted' : ''))
     const head = el('div', 'item-head')
     head.append(el('span', 'kind ' + item.kind, item.kind))
     head.append(el('span', 'meta', (item.source && item.source.app ? item.source.app + ' · ' : '') + fmt(item.createdAt)))
     head.append(el('span', 'meta', '#' + shortId(item.id)))
+    if (deleted) head.append(el('span', 'meta', '已删除 · ' + fmt(item.deletedAt)))
     const actions = el('div', 'actions')
     if (state.editing === item.id) {
       const text = el('textarea'); text.rows = 3; text.value = item.text
@@ -217,18 +230,69 @@
     }
     head.append(el('span', 'meta', item.updatedAt ? '已编辑' : ''))
     box.append(head)
-    const body = el('div', 'item-text', item.text); box.append(body)
+    box.append(el('div', 'item-text', item.text))
     if (item.tags && item.tags.length) {
       const tags = el('div', 'tags'); for (const t of item.tags) tags.append(el('span', 'tag', t)); box.append(tags)
     }
+    if (deleted) {
+      const restore = el('button', 'small primary', '恢复'); restore.onclick = () => restoreItem(item)
+      const purge = el('button', 'small danger', '彻底删除'); purge.onclick = () => purgeItem(item)
+      actions.append(restore, purge)
+      box.append(actions)
+      return box
+    }
     if (item.kind !== 'message') {
-      const edit = el('button', 'small', '编辑'); edit.onclick = () => { state.editing = item.id; refreshList() }
+      const edit = el('button', 'small', '编辑'); edit.onclick = () => { state.editing = item.id; state.historyFor = null; refreshList() }
       actions.append(edit)
+    }
+    if (Array.isArray(item.revisions) && item.revisions.length) {
+      const hist = el('button', 'small', '历史 (' + item.revisions.length + ')')
+      hist.onclick = () => { state.historyFor = state.historyFor === item.id ? null : item.id; state.editing = null; refreshList() }
+      actions.append(hist)
     }
     const del = el('button', 'small danger', '删除'); del.onclick = () => removeItem(item)
     actions.append(del)
     box.append(actions)
+    if (state.historyFor === item.id) box.append(renderHistory(item))
     return box
+  }
+
+  function renderHistory(item) {
+    const wrap = el('div', 'history')
+    wrap.append(el('div', 'meta', '编辑历史（恢复会覆盖当前内容，并把本次修改记成新的一版）'))
+    item.revisions.slice().reverse().forEach((rev, index) => {
+      const row = el('div', 'rev')
+      row.append(el('div', 'meta', 'v' + (item.revisions.length - index) + ' · ' + fmt(rev.updatedAt) + ' · ' + rev.kind))
+      row.append(el('div', 'item-text', rev.text))
+      if (rev.tags && rev.tags.length) { const tags = el('div', 'tags'); for (const t of rev.tags) tags.append(el('span', 'tag', t)); row.append(tags) }
+      const btn = el('button', 'small', '恢复此版本'); btn.onclick = () => restoreRevision(item, rev)
+      row.append(btn)
+      wrap.append(row)
+    })
+    return wrap
+  }
+
+  async function restoreRevision(item, rev) {
+    try {
+      await api('/api/update', { method: 'POST', body: JSON.stringify({ id: item.id, text: rev.text, kind: rev.kind, tags: rev.tags }) })
+      state.historyFor = null
+      await refreshList(); await loadHealth(); toast('已恢复该版本')
+    } catch (e) { toast(e.message) }
+  }
+
+  async function restoreItem(item) {
+    try {
+      await api('/api/restore', { method: 'POST', body: JSON.stringify({ id: item.id }) })
+      await refreshList(); await loadHealth(); toast('已恢复')
+    } catch (e) { toast(e.message) }
+  }
+
+  async function purgeItem(item) {
+    if (!confirm('彻底删除这条记忆？此操作不可恢复。\n\n' + item.text.slice(0, 120))) return
+    try {
+      await api('/api/forget', { method: 'POST', body: JSON.stringify({ id: item.id, purge: true }) })
+      await refreshList(); await loadHealth(); toast('已彻底删除')
+    } catch (e) { toast(e.message) }
   }
 
   async function refreshList() {
@@ -236,12 +300,13 @@
       const params = new URLSearchParams({ limit: String(state.limit), offset: '0' })
       if (state.q) params.set('q', state.q)
       if (state.kind) params.set('kind', state.kind)
+      if (state.view === 'trash') params.set('deleted', '1')
       const res = await api('/api/items?' + params.toString())
       state.offset = 0
       state.items = res.items
       state.total = res.total
       const list = $('list'); list.textContent = ''
-      if (!state.items.length) list.append(el('div', 'empty', state.q || state.kind ? '没有匹配的记忆' : '还没有记忆，先去聊会儿吧'))
+      if (!state.items.length) list.append(el('div', 'empty', state.view === 'trash' ? '回收站是空的' : (state.q || state.kind ? '没有匹配的记忆' : '还没有记忆，先去聊会儿吧')))
       for (const item of res.items) list.append(renderItem(item))
       $('moreBtn').classList.toggle('hidden', state.items.length >= state.total)
     } catch (e) { toast(e.message) }
@@ -252,6 +317,7 @@
       const params = new URLSearchParams({ limit: String(state.limit), offset: String(state.offset) })
       if (state.q) params.set('q', state.q)
       if (state.kind) params.set('kind', state.kind)
+      if (state.view === 'trash') params.set('deleted', '1')
       const res = await api('/api/items?' + params.toString())
       renderList(res)
     } catch (e) { toast(e.message) }
@@ -266,8 +332,8 @@
   }
 
   async function removeItem(item) {
-    if (!confirm('删除这条记忆？\n\n' + item.text.slice(0, 120))) return
-    try { await api('/api/forget', { method: 'POST', body: JSON.stringify({ id: item.id }) }); await refreshList(); await loadHealth(); toast('已删除') } catch (e) { toast(e.message) }
+    if (!confirm('移到回收站？（可在回收站恢复）\n\n' + item.text.slice(0, 120))) return
+    try { await api('/api/forget', { method: 'POST', body: JSON.stringify({ id: item.id }) }); await refreshList(); await loadHealth(); toast('已移到回收站') } catch (e) { toast(e.message) }
   }
 
   async function saveFocus() {
@@ -297,8 +363,17 @@
     } catch (e) { toast(e.message) }
   }
 
+  function setView(view) {
+    state.view = view; state.offset = 0; state.editing = null; state.historyFor = null
+    $('tabActive').classList.toggle('active', view === 'active')
+    $('tabTrash').classList.toggle('active', view === 'trash')
+    refreshList()
+  }
+
   let searchTimer = null
   function bind() {
+    $('tabActive').onclick = () => setView('active')
+    $('tabTrash').onclick = () => setView('trash')
     $('refreshBtn').onclick = () => { refreshList(); loadFocus(); loadHealth() }
     $('exportBtn').onclick = exportAll
     $('tokenBtn').onclick = () => $('tokenPanel').classList.toggle('show')

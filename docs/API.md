@@ -53,7 +53,7 @@
 ```json
 {
   "name": "dsh-shared-memory",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "apiBase": "http://127.0.0.1:62877/dsh-memory",
   "origin": "http://127.0.0.1:62877",
   "storeDir": "/Users/<user>/.dsh/shared-memory",
@@ -81,12 +81,13 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 | GET | `/api/recent?limit=20` | 最近记忆（等价 search 无 q） |
 | GET | `/api/current` | 焦点 + 最近会话动态 + 最近记忆 |
 | GET | `/api/activity?limit=10` | 最近会话动态 |
-| GET | `/api/items` | 分页列表（limit/offset/q/kind/tag/days/session） |
+| GET | `/api/items` | 分页列表（limit/offset/q/kind/tag/days/session/deleted/includeDeleted） |
 | GET | `/api/export` | 导出全部记忆（[NDJSON](https://github.com/ndjson/ndjson-spec) 下载） |
 | POST | `/api/update` | 按 id 原地编辑记忆 |
 | GET | `/ui` | 浏览器查看/编辑页面（HTML） |
 | POST | `/api/remember` | 新增记忆 |
-| POST | `/api/forget` | 删除记忆 |
+| POST | `/api/forget` | 删除记忆（默认进回收站，`purge: true` 彻底删除） |
+| POST | `/api/restore` | 从回收站恢复记忆 |
 | POST | `/api/current` | 设置/清除焦点 |
 
 ### GET /health
@@ -95,7 +96,7 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 {
   "ok": true,
   "name": "dsh-shared-memory",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "startedAt": 1700000000000,
   "storeDir": "/Users/.../.dsh/shared-memory",
   "stats": { "memories": 42, "messages": 30, "sessions": 3, "hasFocus": true }
@@ -185,7 +186,22 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 { "q": "旧手机号", "kind": "profile", "before": 1700000000000 }
 ```
 
-`id` 与 `q` 二选一。返回 `{ "deleted": 1, "ids": ["mem_..."] }`。
+`id` 与 `q` 二选一。默认软删除（进回收站，由 `trashRetentionDays` 到期清理），返回
+`{ "deleted": 1, "ids": ["mem_..."], "mode": "trash" }`；传 `"purge": true` 则彻底删除（`mode: "purge"`）。
+
+### POST /api/restore
+
+```json
+{ "id": "mem_..." }
+```
+
+从回收站恢复，返回 `{ "item": Memory, "restored": true }`；本来不在回收站则 `restored: false`。
+
+### GET /api/items 的回收站参数
+
+- `deleted=1`：只看回收站
+- `includeDeleted=1`：包含回收站记录
+- 默认只返回未删除记录
 
 ### POST /api/current
 

@@ -18,7 +18,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 
 const SERVER_NAME = 'dsh-shared-memory';
-const SERVER_VERSION = '1.2.0';
+const SERVER_VERSION = '1.3.0';
 const DEFAULT_API_BASE = 'http://127.0.0.1:62877/dsh-memory';
 const SUPPORTED_PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18'];
 const DEFAULT_PROTOCOL = '2024-11-05';
@@ -575,7 +575,41 @@ const TOOLS = [
           enum: VALID_KINDS,
           description: '配合 q 时限制记忆类型。Optional kind filter for q.',
         },
+        purge: {
+          type: 'boolean',
+          description: 'true 表示彻底删除；默认只移到回收站（可恢复）。Permanently delete instead of moving to trash.',
+        },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'memory_update',
+    description:
+      'Edit an existing memory in place (text / kind / tags) while keeping its id and creation time. Use it to correct or update a fact instead of forgetting and re-remembering. 原地编辑已有记忆（正文/类型/标签），保留 id 和创建时间；原话缓存（kind=message）不可编辑。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: '要编辑的记忆 id（形如 mem_...）。Memory id.',
+        },
+        text: {
+          type: 'string',
+          description: '新的正文（非空）。New text.',
+        },
+        kind: {
+          type: 'string',
+          enum: ['note', 'profile', 'preference', 'goal', 'project', 'task'],
+          description: '新的记忆类型。New kind.',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '替换后的标签列表。Replacement tags.',
+        },
+      },
+      required: ['id'],
       additionalProperties: false,
     },
   },
@@ -704,8 +738,31 @@ async function runTool(name, args, cfg) {
       if (kind) requireValidKinds(kind);
       const body = id ? { id } : { q };
       if (!id && kind) body.kind = kind;
+      if (args.purge === true) body.purge = true;
       const data = await httpRequest(cfg, 'POST', '/api/forget', { body });
       return toolOk(formatForget(data));
+    }
+
+    case 'memory_update': {
+      const id = asString(args.id);
+      if (!id || !id.trim()) throw new BridgeError('缺少必填参数 id。');
+      const body = { id: id.trim() };
+      if (args.text !== undefined) {
+        const text = asString(args.text);
+        if (!text || !text.trim()) throw new BridgeError('text 不能为空。');
+        body.text = text.trim();
+      }
+      if (args.kind !== undefined) {
+        requireValidKinds(args.kind);
+        body.kind = asString(args.kind);
+      }
+      if (args.tags !== undefined) {
+        const tags = normalizeTags(args.tags);
+        if (tags === null) throw new BridgeError('tags 必须是字符串数组。');
+        body.tags = tags;
+      }
+      const data = await httpRequest(cfg, 'POST', '/api/update', { body });
+      return toolOk(formatRemember(data));
     }
 
     case 'memory_current': {

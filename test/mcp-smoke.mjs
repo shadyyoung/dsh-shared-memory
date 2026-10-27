@@ -30,6 +30,7 @@ const expectedTools = [
   'memory_remember',
   'memory_search',
   'memory_status',
+  'memory_update',
 ];
 
 // ---------------------------------------------------------------------------
@@ -241,6 +242,17 @@ const apiServer = http.createServer(async (req, res) => {
     return reply(200, { deleted: removed.length, ids: removed.map((m) => m.id) });
   }
 
+  if (url.pathname === '/dsh-memory/api/update' && req.method === 'POST') {
+    const body = await readJsonBody(req);
+    const item = Array.isArray(store.memories) ? store.memories.find((memory) => memory.id === (body && body.id)) : null;
+    if (!item) return reply(404, { error: { code: 'NOT_FOUND', message: '记忆不存在' } });
+    if (typeof body.text === 'string') item.text = body.text;
+    if (typeof body.kind === 'string') item.kind = body.kind;
+    if (Array.isArray(body.tags)) item.tags = body.tags;
+    item.updatedAt = Date.now();
+    return reply(200, { item });
+  }
+
   return reply(404, {
     error: { code: 'NOT_FOUND', message: `未知 API：${req.method} ${url.pathname}` },
   });
@@ -446,7 +458,7 @@ async function main() {
 
   // 3. tools/list：名称、schema、双语描述
   const list = await client.request('tools/list', {});
-  check('tools/list 暴露 API.md 规定的 6 个工具', () => {
+  check('tools/list 暴露 API.md 规定的 7 个工具', () => {
     const names = list.result.tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, expectedTools);
   });
@@ -602,6 +614,25 @@ async function main() {
   });
   check('删除后搜索不到该记忆', () => {
     assert.match(searchGone.result.content[0].text, /没有找到匹配的共享记忆/);
+  });
+
+  // 9b. memory_update
+  await client.request('tools/call', {
+    name: 'memory_remember',
+    arguments: { text: '临时记忆：待更新', kind: 'note' },
+  });
+  const target = store.memories.find((memory) => memory.text === '临时记忆：待更新');
+  const update = await client.request('tools/call', {
+    name: 'memory_update',
+    arguments: { id: target.id, text: '更新后的正文', kind: 'project', tags: ['updated'] },
+  });
+  check('memory_update 原地编辑并保留 id', () => {
+    assert.equal(update.result.isError, false);
+    const text = update.result.content[0].text;
+    assert.match(text, /更新后的正文/);
+    assert.equal(target.text, '更新后的正文');
+    assert.equal(target.kind, 'project');
+    assert.deepEqual(target.tags, ['updated']);
   });
 
   // 10. resources/list + resources/read

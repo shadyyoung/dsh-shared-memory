@@ -18,6 +18,8 @@
         maxDigestChars: 1200
         maxStoredMessages: 3000
         maxActivitySessions: 200
+        trashRetentionDays: 30
+        maxRevisions: 20
         apiEnabled: true
         apiPath: /dsh-memory
         apiToken: ''

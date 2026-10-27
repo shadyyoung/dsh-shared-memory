@@ -144,6 +144,17 @@ try {
   assert.equal(page.body.limit, 1)
   console.log('ok update + UI + export')
 
+  // 3c. soft delete + restore
+  const trashed = await post('/api/forget', { id })
+  assert.equal(trashed.status, 200)
+  assert.equal(trashed.body.mode, 'trash')
+  const trashPage = await api('/api/items?deleted=1')
+  assert.ok(trashPage.body.items.some((entry) => entry.id === id))
+  const restored = await post('/api/restore', { id })
+  assert.equal(restored.status, 200)
+  assert.equal(restored.body.restored, true)
+  console.log('ok soft delete + restore')
+
   // 4. MCP bridge against the same hub
   const status = await callBridgeTool(base, 'memory_status')
   assert.equal(status.isError, false)

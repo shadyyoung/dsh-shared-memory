@@ -7,7 +7,7 @@ A **cross-session, cross-app, cross-platform memory layer** (packaged as a DeepS
 - Shape: **Harness Host plugin** + **zero-dependency MCP stdio bridge** + **reusable agent skill**
 - Storage: `~/.dsh/shared-memory/`
 - Package / loader row: `@local/shared-memory` / `shared-memory`
-- Version: 1.2.0 · License: MIT
+- Version: 1.3.0 · License: MIT
 
 > The Chinese name is now **AI 跨平台记忆增强 1.0**; the English name stays **Shared Memory**. Internal identifiers (package, skill id, store path) are unchanged for compatibility.
 
@@ -133,8 +133,8 @@ Prerequisites: DeepSeek Harness Desktop (Cordis plugin system, `plugin_manager`)
 | Current focus | One structured "what is the user doing now" document, updated automatically from substantive messages or explicitly by any app |
 | Session activity | Latest user/assistant message, message count, cwd and title per root session — visible across sessions |
 | Prompt digest | Injects `## Shared Memory` (≤1200 chars) into every model request; `text` is a function, so new memories appear on the next step |
-| Model tools | `memory_remember` / `memory_search` / `memory_forget` / `memory_update` / `memory_current` |
-| Viewer / editor UI | Browser page at `/dsh-memory/ui`: browse, search, edit, delete, focus editor, JSONL export |
+| Model tools | `memory_remember` / `memory_search` / `memory_forget` / `memory_update` / `memory_restore` / `memory_current` |
+| Viewer / editor UI | Browser page at `/dsh-memory/ui`: browse, search, edit, trash/restore, edit history, focus editor, JSONL export |
 | HTTP API | `http://127.0.0.1:<port>/dsh-memory` (port from `runtime.json`) |
 | MCP bridge | `~/.dsh/shared-memory/mcp-server.mjs`, zero dependencies, stdio JSON-RPC |
 
@@ -180,6 +180,8 @@ Edit [cordis.patch.yml](cordis.patch.yml) and re-enable the bundle.
 | `apiToken` | `""` | when set, `/api/*` requires `Authorization: Bearer <token>` |
 | `autoFocusMinutes` | `90` | auto-focus refresh interval; 0 disables |
 | `writeHumanDigest` | `true` | maintain `digest.md` |
+| `trashRetentionDays` | `30` | trash retention; 0 = keep forever |
+| `maxRevisions` | `20` | edit-history versions kept per memory; 0 = none |
 
 ## Verify
 

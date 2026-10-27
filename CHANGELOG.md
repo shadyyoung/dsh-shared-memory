@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.3.0 — 2026-10-27
+
+### 新增 / Added
+
+- **回收站（软删除）**：`forget` 默认只标记 `deletedAt`，`trashRetentionDays`（默认 30 天）后自动清理；`purge: true` 立即彻底删除；新增 `POST /api/restore` 与 `memory_restore` 工具。
+- **编辑历史**：每次 `update` 保留上一版（`revisions`，默认最多 20 条）；UI 可查看/恢复任意历史版本。
+- **MCP 桥补 `memory_update`**：外部应用（Claude/Cursor/Codex）现在可以原地编辑记忆；`memory_forget` 增加 `purge` 参数。
+- **提示词注入防护**：摘要用 `<memory-data>` 围栏包裹 + `sanitizeMemoryText()` 过滤常见注入指令/伪造标签。
+- **UI**：记忆 / 回收站切换、恢复、彻底删除、编辑历史查看与恢复；统计增加回收站条数。
+- 搜索/列表支持 `deleted=1`、`includeDeleted=1`；摘要与检索默认排除回收站。
+
+### 测试 / Tests
+
+- host-smoke：软删除 → 回收站可见 → 恢复 → 彻底删除、编辑历史、digest 围栏与注入过滤。
+- mcp-smoke：`memory_update` 工具（36 项断言）。
+- standalone-smoke：Hub 上的软删除 + 恢复。
+
+### 配置 / Config
+
+- `trashRetentionDays`（默认 30，0=永久）
+- `maxRevisions`（默认 20，0=不保留历史）
+
 ## v1.2.0 — 2026-10-26
 
 ### 新增 / Added
