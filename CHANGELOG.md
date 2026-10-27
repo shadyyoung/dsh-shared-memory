@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.6.0 — 2026-10-27
+
+### 新增 / Added
+
+- **自动抽取 + 待确认收件箱**：用户消息自动抽取长期事实（规则模式默认、免费；`autoExtract: llm` 可切模型抽取，`maxExtractPerDay` 日配额），全部进候选区，UI 接受才落库，可编辑/拒绝。
+- **导入历史对话**：`POST /api/import` 支持 ChatGPT / Claude `conversations.json`、jsonl、txt/md；导入为原话并按同一管线生成候选；UI 备份卡片里可直接选文件导入。
+- **PII 脱敏**：写入前识别常见密钥/令牌/身份证号，默认替换为 `[已脱敏]`；`piiPolicy` 可设为 off/warn/redact。
+- **接入自检 `npm run doctor`**：检查 DSH 服务、MCP 桥握手、Cursor / Codex / Claude Desktop / WorkBuddy 配置。
+- **UI**：新增「待确认」tab；备份卡片新增「导入历史对话」。
+- Claude Desktop 配置已写入 `mcpServers.shared-memory`（备份原文件后修改）。
+
+### 配置 / Config
+
+- `autoExtract`（默认 `rules`；`off` / `llm`）
+- `extractProvider` / `extractModel`（空=默认模型）
+- `maxExtractPerDay`（默认 30）
+- `extractMinChars`（默认 18）
+- `piiPolicy`（默认 `redact`）
+
+### 测试 / Tests
+
+- host-smoke：候选创建/接受/拒绝、ChatGPT 导入生成候选与被检索、PII 脱敏。
+- doctor 自检 7 项（含 Claude Desktop 已接入）。
+
 ## v1.5.0 — 2026-10-27
 
 ### 新增 / Added

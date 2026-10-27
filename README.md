@@ -12,7 +12,7 @@
 - 形态：**DeepSeek Harness Host 插件（bundle）** + **零依赖 MCP stdio 桥** + **可复用 Agent Skill**
 - 存储位置：`~/.dsh/shared-memory/`
 - 包名 / 行 id：`@local/shared-memory` / `shared-memory`
-- 版本：1.5.0 · License：MIT
+- 版本：1.6.0 · License：MIT
 
 > 原名 **共享记忆**，自 v1.0.0 起中文名改为 **AI 跨平台记忆增强 1.0**；**英文名保持 Shared Memory 不变**。内部标识（包名、skill id、存储目录）保持不变，不影响已有安装与数据。
 
@@ -147,6 +147,10 @@ node standalone/server.mjs --port 7400 --host 127.0.0.1 --store ~/.dsh/shared-me
 | 模型工具 | `memory_remember` / `memory_search` / `memory_forget` / `memory_update` / `memory_restore` / `memory_current` |
 | 查看编辑 UI | `/dsh-memory/ui`：搜索高亮、相关性/最新排序、编辑、回收站/恢复/清空、编辑历史、使用次数、**备份/恢复**、导出 JSONL |
 | 自动备份 | 默认每 24 小时把全量数据 gzip 快照到 `~/.dsh/shared-memory-backups/`（保留 14 份），UI 可手动备份/一键恢复 |
+| 自动抽取 | 抓取用户消息里的长期事实（规则模式默认、免费；可切 `llm` 用模型抽取），先进「待确认」收件箱，UI 一键接受/编辑/拒绝 |
+| 导入历史 | 支持 ChatGPT / Claude 导出的 `conversations.json`、jsonl、txt/md，导入为原话并自动生成候选记忆 |
+| PII 脱敏 | 写入前识别 `sk-*`、`ghp_*`、`AKIA*`、Bearer、`password=`、身份证号等，默认替换为 `[已脱敏]` |
+| 接入自检 | `npm run doctor`（或 `node scripts/doctor.mjs`）逐项检查 DSH 服务 / MCP 桥 / Cursor / Codex / Claude Desktop / WorkBuddy |
 | 检索 | **BM25 倒排索引**（中文 bigram + 英文词），相关性排序，标签参与索引；支持 `sort=relevance|newest` |
 | HTTP API | `http://127.0.0.1:<端口>/dsh-memory`（端口随 Harness 启动变化，见 `runtime.json`） |
 | MCP 桥 | `~/.dsh/shared-memory/mcp-server.mjs`，零依赖 stdio MCP 服务，供 Claude Desktop / Claude Code / Cursor / Codex 等接入 |
@@ -243,6 +247,10 @@ http://127.0.0.1:<端口>/dsh-memory/ui
 | `backupDir` | `~/.dsh/shared-memory-backups` | 备份目录（默认在存储目录之外，删库也不会丢；可指到 iCloud/Dropbox） |
 | `backupKeep` | `14` | 保留最近 N 份备份，自动清理更旧的 |
 | `autoBackupHours` | `24` | 自动备份间隔（小时），0=关闭自动备份 |
+| `autoExtract` | `rules` | 自动抽取：`off` / `rules`（免费规则）/ `llm`（模型抽取） |
+| `extractModel` | 空 | 模型抽取用的 provider/model；空=用默认模型（可指定便宜模型省成本） |
+| `maxExtractPerDay` | `30` | 每日模型抽取次数上限（成本闸门） |
+| `piiPolicy` | `redact` | `off` 不处理 / `warn` 只标记 / `redact` 写入前脱敏 |
 
 ## 验证
 

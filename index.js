@@ -25,10 +25,39 @@ export const name = 'shared-memory'
 export const inject = ['tools', 'systemPrompt', 'webServer']
 
 const PLUGIN_NAME = 'dsh-shared-memory'
-const VERSION = '1.5.0'
+const VERSION = '1.6.0'
 const DAY = 86400000
 /** A backup file name accepted by list/restore (path traversal guard). */
 const BACKUP_NAME = /^backup-[0-9A-Za-z._-]+\.json\.gz$/
+
+/** Automatic extraction modes: off, cheap rules, or one model call per batch. */
+const AUTO_EXTRACT_MODES = ['off', 'rules', 'llm']
+/** How secrets found in memory text are handled. */
+const PII_POLICIES = ['off', 'warn', 'redact']
+/** Patterns for credentials/PII likely to leak into captured messages. */
+const PII_PATTERNS = [
+  { re: /\b(sk-[A-Za-z0-9_-]{16,})\b/g, label: '[已脱敏:sk密钥]' },
+  { re: /\b(gh[pousr]_[A-Za-z0-9]{20,})\b/g, label: '[已脱敏:github令牌]' },
+  { re: /\b(AKIA[0-9A-Z]{16})\b/g, label: '[已脱敏:aws密钥]' },
+  { re: /\b(xox[baprs]-[A-Za-z0-9-]{10,})\b/g, label: '[已脱敏:slack令牌]' },
+  { re: /\b(Bearer\s+)[A-Za-z0-9._~+/-]{16,}=*/g, label: '$1[已脱敏:令牌]' },
+  { re: /((?:password|passwd|pwd|密码|口令|api[_-]?key|token|secret)\s*[:=：]\s*)\S{6,}/gi, label: '$1[已脱敏]' },
+  { re: /\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g, label: '[已脱敏:身份证号]' },
+]
+
+/** Replace or flag credentials in text; `off` keeps everything. */
+function scrubPii(text, policy) {
+  if (policy === 'off' || typeof text !== 'string') return { text, hits: 0 }
+  let hits = 0
+  let output = text
+  for (const pattern of PII_PATTERNS) {
+    output = output.replace(pattern.re, (...groups) => {
+      hits += 1
+      return pattern.label.includes('$1') ? pattern.label.replace('$1', groups[1] ?? '') : pattern.label
+    })
+  }
+  return { text: policy === 'redact' ? output : text, hits }
+}
 
 /** Memory kinds accepted by `memory_remember` and the HTTP API. */
 const REMEMBER_KINDS = ['note', 'profile', 'preference', 'goal', 'project', 'task']
@@ -49,6 +78,12 @@ const DEFAULT_CONFIG = {
   backupDir: '~/.dsh/shared-memory-backups',
   backupKeep: 14,
   autoBackupHours: 24,
+  autoExtract: 'rules',
+  extractProvider: '',
+  extractModel: '',
+  maxExtractPerDay: 30,
+  extractMinChars: 18,
+  piiPolicy: 'redact',
   apiEnabled: true,
   apiPath: '/dsh-memory',
   apiToken: '',
@@ -83,6 +118,12 @@ function resolveConfig(raw) {
     backupDir: expandHome(string(src.backupDir, DEFAULT_CONFIG.backupDir)),
     backupKeep: Math.round(number(src.backupKeep, DEFAULT_CONFIG.backupKeep, 1, 365)),
     autoBackupHours: number(src.autoBackupHours, DEFAULT_CONFIG.autoBackupHours, 0, 8760),
+    autoExtract: AUTO_EXTRACT_MODES.includes(src.autoExtract) ? src.autoExtract : DEFAULT_CONFIG.autoExtract,
+    extractProvider: typeof src.extractProvider === 'string' ? src.extractProvider.trim() : '',
+    extractModel: typeof src.extractModel === 'string' ? src.extractModel.trim() : '',
+    maxExtractPerDay: Math.round(number(src.maxExtractPerDay, DEFAULT_CONFIG.maxExtractPerDay, 0, 1000)),
+    extractMinChars: Math.round(number(src.extractMinChars, DEFAULT_CONFIG.extractMinChars, 4, 2000)),
+    piiPolicy: PII_POLICIES.includes(src.piiPolicy) ? src.piiPolicy : DEFAULT_CONFIG.piiPolicy,
     apiEnabled: bool(src.apiEnabled, DEFAULT_CONFIG.apiEnabled),
     apiPath,
     apiToken: typeof src.apiToken === 'string' ? src.apiToken.trim() : '',
@@ -383,6 +424,87 @@ class SearchIndex {
   }
 }
 
+/** Pull user texts out of a ChatGPT / Claude / generic JSON export. */
+function parseImportPayload(format, content) {
+  const text = typeof content === 'string' ? content : ''
+  if (!text.trim()) throw new Error('content 不能为空')
+  const conversations = []
+  const addConversation = (title, messages) => {
+    const clean = messages.map((value) => String(value ?? '').trim()).filter((value) => value.length >= 2)
+    if (clean.length) conversations.push({ title: String(title || '导入对话').slice(0, 120), messages: clean })
+  }
+  const kind = format === 'auto' ? '' : format
+
+  if (kind && kind !== 'chatgpt' && kind !== 'claude' && kind !== 'jsonl') {
+    // Plain markdown/text: each paragraph becomes a user message.
+    const paragraphs = text
+      .split(/\n{2,}/)
+      .map((line) => line.trim())
+      .filter((line) => line.length >= 8)
+    addConversation('导入文本', paragraphs.slice(0, 500))
+    return { conversations }
+  }
+
+  if (kind === 'jsonl' || (kind === 'auto' && !/^\s*[[{]/.test(text))) {
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      let row
+      try {
+        row = JSON.parse(trimmed)
+      } catch {
+        continue
+      }
+      const message = row && (row.message || row)
+      const role = (message && (message.role || message.sender)) || 'user'
+      if (role !== 'user' && role !== 'human') continue
+      const contentBlocks = message.content
+      const value = typeof contentBlocks === 'string'
+        ? contentBlocks
+        : Array.isArray(contentBlocks)
+          ? contentBlocks.map((block) => (typeof block === 'string' ? block : block && (block.text || block.content))).filter(Boolean).join('\n')
+          : message.text || ''
+      if (value) addConversation(row.title || '', [value])
+    }
+    return { conversations }
+  }
+
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error('不是合法 JSON，导出文件请选 chatgpt / claude 格式或 jsonl')
+  }
+  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.conversations) ? parsed.conversations : [parsed]
+  for (const item of list.slice(0, 500)) {
+    if (!isPlainObject(item)) continue
+    const title = item.title || item.name || '导入对话'
+    const messages = []
+    if (isPlainObject(item.mapping)) {
+      for (const node of Object.values(item.mapping)) {
+        const message = node && node.message
+        if (!message || (message.author && message.author.role !== 'user' && message.author.role !== 'human')) continue
+        const parts = message.content && Array.isArray(message.content.parts) ? message.content.parts : []
+        const value = parts.filter((part) => typeof part === 'string').join('\n')
+        if (value) messages.push(value)
+      }
+    } else if (Array.isArray(item.chat_messages)) {
+      for (const message of item.chat_messages) {
+        if (!message || (message.sender !== 'human' && message.sender !== 'user')) continue
+        if (message.text) messages.push(message.text)
+      }
+    } else if (Array.isArray(item.messages)) {
+      for (const message of item.messages) {
+        if (!message || (message.role && message.role !== 'user')) continue
+        const value = typeof message.content === 'string' ? message.content : Array.isArray(message.content) ? message.content.map((block) => block && block.text).filter(Boolean).join('\n') : message.text
+        if (value) messages.push(value)
+      }
+    }
+    addConversation(title, messages)
+  }
+  return { conversations }
+}
+
 /**
  * The file-backed memory store. One instance per Host process; every mutation
  * goes through a single promise chain so the JSONL file and JSON documents
@@ -406,6 +528,12 @@ class SharedMemoryStore {
     this.lastUserAt = 0
     this.lastBackupAt = 0
     this.backupTimer = null
+    this.candidates = []
+    this.extractState = { date: '', count: 0 }
+    this.extractQueue = []
+    this.extractTimer = null
+    this.llm = null
+    this.agentDefaultModel = null
     this.ready = this.#init()
   }
 
@@ -420,6 +548,15 @@ class SharedMemoryStore {
     await this.#loadActivity()
     await this.#loadUsage()
     await this.#loadBackupState()
+    await this.#loadCandidates()
+    try {
+      const state = JSON.parse(await fsp.readFile(this.file('extract-state.json'), 'utf8'))
+      if (isPlainObject(state) && typeof state.date === 'string') {
+        this.extractState = { date: state.date, count: Number.isFinite(state.count) ? state.count : 0 }
+      }
+    } catch {
+      // No extraction state yet.
+    }
     await this.#pruneTrash()
   }
 
@@ -612,9 +749,12 @@ class SharedMemoryStore {
   /** Append one memory record, deduplicating identical durable facts. */
   async remember({ text, kind = 'note', tags = [], source = {} }) {
     await this.ready
-    const cleanText = typeof text === 'string' ? text.trim() : ''
+    let cleanText = typeof text === 'string' ? text.trim() : ''
     if (!cleanText) throw new Error('text 不能为空')
     if (cleanText.length > 8000) throw new Error('text 最多 8000 字符')
+    const scrub = scrubPii(cleanText, this.config.piiPolicy)
+    cleanText = scrub.text
+    if (scrub.hits) this.lastPiiHits = (this.lastPiiHits ?? 0) + scrub.hits
     const cleanKind = REMEMBER_KINDS.includes(kind) ? kind : 'note'
     const cleanSource = normalizeSource({ app: 'dsh', ...source })
     const dedupe = this.records.find((record) => !record.deletedAt && record.kind === cleanKind && record.text === cleanText && record.kind !== 'message')
@@ -639,8 +779,11 @@ class SharedMemoryStore {
   /** Capture one user message from a live root session. */
   async captureMessage({ text, sessionId, cwd, title }) {
     await this.ready
-    const cleanText = typeof text === 'string' ? text.trim() : ''
+    let cleanText = typeof text === 'string' ? text.trim() : ''
     if (!cleanText) return null
+    const scrub = scrubPii(cleanText, this.config.piiPolicy)
+    cleanText = scrub.text
+    if (scrub.hits) this.lastPiiHits = (this.lastPiiHits ?? 0) + scrub.hits
     // The same committed message must not be captured twice (e.g. replay/hook duplication).
     const duplicate = this.records.some(
       (record) =>
@@ -668,8 +811,295 @@ class SharedMemoryStore {
       await appended
       await this.#pruneMessages()
     }
+    this.#scheduleExtraction(record)
     this.#changed()
     return record
+  }
+
+  /** Load pending/extracted candidates from disk. */
+  async #loadCandidates() {
+    try {
+      const raw = JSON.parse(await fsp.readFile(this.file('candidates.json'), 'utf8'))
+      if (Array.isArray(raw)) this.candidates = raw.filter((item) => isPlainObject(item) && typeof item.text === 'string')
+    } catch {
+      // No candidates yet.
+    }
+  }
+
+  async #saveCandidates() {
+    const body = JSON.stringify(this.candidates.slice(-500), null, 2) + '\n'
+    await this.#enqueue(() => atomicWrite(this.file('candidates.json'), body))
+  }
+
+  /** Add extracted facts as pending candidates (deduped against memories and pending). */
+  async addCandidates(items = []) {
+    await this.ready
+    const added = []
+    const seen = new Set(
+      this.candidates.filter((item) => item.status === 'pending').map((item) => item.text.trim().toLowerCase()),
+    )
+    for (const item of items) {
+      if (!isPlainObject(item)) continue
+      const text = typeof item.text === 'string' ? item.text.trim() : ''
+      if (text.length < 4 || text.length > 500) continue
+      const key = text.toLowerCase()
+      if (seen.has(key)) continue
+      if (this.records.some((record) => record.kind !== 'message' && record.text === text)) continue
+      seen.add(key)
+      added.push({
+        id: `cand_${randomUUID()}`,
+        text,
+        kind: REMEMBER_KINDS.includes(item.kind) ? item.kind : 'note',
+        tags: normalizeTags(item.tags),
+        reason: typeof item.reason === 'string' ? item.reason.slice(0, 200) : '',
+        source: isPlainObject(item.source) ? item.source : { app: 'auto' },
+        createdAt: Date.now(),
+        status: 'pending',
+      })
+    }
+    if (!added.length) return []
+    this.candidates.push(...added)
+    await this.#saveCandidates()
+    this.#changed()
+    return added
+  }
+
+  /** List candidates, newest first. */
+  listCandidates({ status = 'pending', limit = 50 } = {}) {
+    const clean = ['pending', 'accepted', 'rejected', 'all'].includes(status) ? status : 'pending'
+    const items = this.candidates
+      .filter((item) => clean === 'all' || item.status === clean)
+      .sort((a, b) => b.createdAt - a.createdAt)
+    return { items: items.slice(0, Math.max(1, Math.min(200, limit))), total: items.length }
+  }
+
+  async #findCandidate(id) {
+    const index = this.candidates.findIndex((item) => item.id === id)
+    if (index < 0) {
+      const error = new Error('候选不存在')
+      error.statusCode = 404
+      throw error
+    }
+    return index
+  }
+
+  /** Accept one candidate: write it as a durable memory, then mark it accepted. */
+  async acceptCandidate({ id } = {}) {
+    await this.ready
+    const index = await this.#findCandidate(id)
+    const candidate = this.candidates[index]
+    const result = await this.remember({
+      text: candidate.text,
+      kind: candidate.kind,
+      tags: candidate.tags,
+      source: { app: 'auto', ...candidate.source },
+    })
+    this.candidates[index] = { ...candidate, status: 'accepted', acceptedAt: Date.now(), memoryId: result.item.id }
+    await this.#saveCandidates()
+    this.#changed()
+    return { item: result.item, candidate: this.candidates[index], deduped: Boolean(result.deduped) }
+  }
+
+  async rejectCandidate({ id } = {}) {
+    await this.ready
+    const index = await this.#findCandidate(id)
+    this.candidates[index] = { ...this.candidates[index], status: 'rejected', rejectedAt: Date.now() }
+    await this.#saveCandidates()
+    this.#changed()
+    return { id, rejected: true }
+  }
+
+  async updateCandidate({ id, text, kind, tags } = {}) {
+    await this.ready
+    const index = await this.#findCandidate(id)
+    const candidate = this.candidates[index]
+    if (typeof text === 'string' && text.trim()) candidate.text = text.trim().slice(0, 500)
+    if (REMEMBER_KINDS.includes(kind)) candidate.kind = kind
+    if (Array.isArray(tags)) candidate.tags = normalizeTags(tags)
+    await this.#saveCandidates()
+    this.#changed()
+    return { candidate }
+  }
+
+  /** Daily extraction budget: persist { date, count } in extract-state.json. */
+  async #takeExtractBudget() {
+    const today = new Date().toISOString().slice(0, 10)
+    if (this.extractState.date !== today) {
+      this.extractState = { date: today, count: 0 }
+      try {
+        await atomicWrite(this.file('extract-state.json'), JSON.stringify(this.extractState) + '\n')
+      } catch {
+        // best effort
+      }
+    }
+    if (this.extractState.count >= this.config.maxExtractPerDay) return false
+    this.extractState.count += 1
+    try {
+      await atomicWrite(this.file('extract-state.json'), JSON.stringify(this.extractState) + '\n')
+    } catch {
+      // best effort
+    }
+    return true
+  }
+
+  /** Cheap keyword extraction; no model call, high precision on explicit statements. */
+  static extractByRules(text) {
+    const facts = []
+    const sentences = String(text || '')
+      .split(/(?<=[。！？!?；;\n])/)
+      .map((line) => line.trim())
+      .filter((line) => line.length >= 8 && line.length <= 240)
+    const rules = [
+      { re: /(我(?:比较|更)?(?:喜欢|偏好|习惯|讨厌|不喜欢|希望)|我一般|我通常)/, kind: 'preference', reason: '用户表达偏好' },
+      { re: /(我是|我在用|我用的是|我住在|我的工作|我的职业|我平时)/, kind: 'profile', reason: '用户陈述身份/环境' },
+      { re: /(我打算|我准备|我的目标|计划做|决定要|接下来要)/, kind: 'goal', reason: '用户表达目标/计划' },
+      { re: /(我在做|我的项目|正在开发|正在搭建)/, kind: 'project', reason: '用户描述项目' },
+      { re: /(提醒我|别忘了|记得要|待办)/, kind: 'task', reason: '用户提到待办' },
+    ]
+    const seen = new Set()
+    for (const sentence of sentences) {
+      for (const rule of rules) {
+        if (!rule.re.test(sentence)) continue
+        const clean = sentence.replace(/^[\s"“”'‘’]+|[\s"“”'‘’]+$/g, '')
+        if (clean.length < 8 || seen.has(clean)) break
+        seen.add(clean)
+        facts.push({ text: clean, kind: rule.kind, tags: [], reason: rule.reason })
+        break
+      }
+      if (facts.length >= 2) break
+    }
+    return facts
+  }
+
+  /** Ask the default model for 0–3 durable facts; returns [] on any failure. */
+  async #extractByLlm(texts) {
+    if (!this.llm || typeof this.llm.stream !== 'function') return []
+    let provider = this.config.extractProvider
+    let model = this.config.extractModel
+    if (!provider || !model) {
+      try {
+        const selection = this.agentDefaultModel && this.agentDefaultModel.currentSelection()
+        if (selection) {
+          provider = provider || selection.provider
+          model = model || selection.model
+        }
+      } catch {
+        // fall through
+      }
+    }
+    if (!provider || !model) return []
+    if (!(await this.#takeExtractBudget())) return []
+    const system = [
+      '你是一个长期记忆抽取器。只抽取用户明确说出的、跨会话仍然有用的稳定事实。',
+      '输出严格 JSON 数组，每项 {"text": "...", "kind": "profile|preference|goal|project|task|note", "tags": ["..."]}。',
+      '不要抽取：一次性事务、代码细节、对助手的提问、客套话、临时调试信息。',
+      '没有值得长期记住的内容就输出 []。最多 3 条。',
+    ].join('\n')
+    let output = ''
+    try {
+      const messages = [{ role: 'user', content: [{ type: 'text', text: texts.join('\n---\n') }] }]
+      for await (const chunk of this.llm.stream({ provider, model, system, messages, maxTokens: 600, temperature: 0 })) {
+        if (chunk && chunk.type === 'text-delta') output += chunk.text
+      }
+    } catch {
+      return []
+    }
+    const match = output.match(/\[[\s\S]*\]/)
+    if (!match) return []
+    try {
+      const parsed = JSON.parse(match[0])
+      if (!Array.isArray(parsed)) return []
+      return parsed
+        .filter((item) => item && typeof item.text === 'string')
+        .slice(0, 3)
+        .map((item) => ({
+          text: item.text,
+          kind: REMEMBER_KINDS.includes(item.kind) ? item.kind : 'note',
+          tags: Array.isArray(item.tags) ? item.tags : [],
+          reason: '模型抽取',
+        }))
+    } catch {
+      return []
+    }
+  }
+
+  /** Queue a user message for background extraction (debounced batch). */
+  #scheduleExtraction(record) {
+    if (this.config.autoExtract === 'off') return
+    const text = record.text
+    if (typeof text !== 'string' || text.length < this.config.extractMinChars) return
+    if (/^[/!]/.test(text.trim())) return
+    this.extractQueue.push(text.slice(0, 4000))
+    if (this.extractTimer) return
+    this.extractTimer = setTimeout(() => {
+      this.extractTimer = null
+      const batch = this.extractQueue.splice(0, 10)
+      if (!batch.length) return
+      void this.#runExtraction(batch).catch(() => undefined)
+    }, 8000)
+    this.extractTimer.unref?.()
+  }
+
+  async #runExtraction(batch) {
+    const texts = batch.join('\n---\n')
+    if (this.config.autoExtract === 'rules') {
+      await this.addCandidates(SharedMemoryStore.extractByRules(texts))
+      return
+    }
+    const items = await this.#extractByLlm(batch)
+    if (items.length) await this.addCandidates(items.map((item) => ({ ...item, source: { app: 'auto' } })))
+  }
+
+  /** Attach the Host model service so automatic extraction can run. */
+  attachLlm(llm, agentDefaultModel) {
+    this.llm = llm ?? null
+    this.agentDefaultModel = agentDefaultModel ?? null
+  }
+
+  /** Import historical conversations as raw messages, then extract candidates. */
+  async importConversations({ conversations = [], app = 'import', extract = true } = {}) {
+    await this.ready
+    const sessionId = `import_${String(app).slice(0, 20)}`
+    const existing = new Set(
+      this.records.filter((record) => record.kind === 'message' && record.source.sessionId === sessionId).map((record) => record.text),
+    )
+    const userTexts = []
+    let imported = 0
+    for (const conversation of conversations.slice(0, 500)) {
+      for (const value of (conversation.messages || []).slice(0, 100)) {
+        const clean = clip(String(value ?? '').trim(), 8000)
+        if (clean.length < 2 || existing.has(clean)) continue
+        existing.add(clean)
+        userTexts.push(clean)
+        const record = {
+          id: `msg_${randomUUID()}`,
+          kind: 'message',
+          text: clean,
+          tags: [],
+          source: normalizeSource({ app, sessionId, title: conversation.title }),
+          createdAt: Date.now(),
+        }
+        this.records.push(record)
+        this.index.add(record)
+        await this.#enqueue(() => fsp.appendFile(this.file('memories.jsonl'), JSON.stringify(record) + '\n', 'utf8'))
+        imported += 1
+        if (imported >= 2000) break
+      }
+      if (imported >= 2000) break
+    }
+    let added = []
+    if (extract && userTexts.length) {
+      const sample = userTexts.slice(0, 40)
+      let items = []
+      if (this.config.autoExtract === 'llm') {
+        items = await this.#extractByLlm(sample)
+      } else if (this.config.autoExtract === 'rules') {
+        items = sample.flatMap((text) => SharedMemoryStore.extractByRules(text)).slice(0, 40)
+      }
+      if (items.length) added = await this.addCandidates(items.map((item) => ({ ...item, source: { app: 'import' } })))
+    }
+    this.#changed()
+    return { imported, conversations: conversations.length, candidates: added.length }
   }
 
   /** Permanently remove every record currently in the trash. */
@@ -1316,6 +1746,8 @@ class SharedMemoryStore {
       trash: this.records.length - active.length,
       sessions: this.activity.size,
       hasFocus: this.focus !== null,
+      candidates: this.candidates.filter((item) => item.status === 'pending').length,
+      autoExtract: this.config.autoExtract,
     }
   }
 
@@ -1753,6 +2185,14 @@ function safeCwd(exec) {
 export function apply(ctx, rawConfig) {
   const config = resolveConfig(rawConfig)
   const store = new SharedMemoryStore(config)
+  try {
+    store.attachLlm(
+      typeof ctx.get === 'function' ? ctx.get('llm') : null,
+      typeof ctx.get === 'function' ? ctx.get('agentDefaultModel') : null,
+    )
+  } catch {
+    // Model services are optional; rules mode still works.
+  }
   const diagnostics = []
   const diag = (error) => {
     const message = error instanceof Error ? error.message : String(error)
@@ -2023,6 +2463,12 @@ function createApiHandler(store, config, diag) {
             'GET /api/backups',
             'POST /api/backup',
             'POST /api/restore-backup',
+            'GET /api/candidates',
+            'POST /api/candidates',
+            'POST /api/candidates/accept',
+            'POST /api/candidates/reject',
+            'POST /api/candidates/update',
+            'POST /api/import',
             'POST /api/current',
             'GET /ui',
           ],
@@ -2157,6 +2603,59 @@ function createApiHandler(store, config, diag) {
 
       if (sub === '/api/purge-trash' && req.method === 'POST') {
         const result = await store.purgeTrash()
+        await store.writeHumanDigest()
+        sendJson(res, 200, result)
+        return
+      }
+
+      if (sub === '/api/candidates' && req.method === 'GET') {
+        const limitParam = Number(url.searchParams.get('limit'))
+        const result = store.listCandidates({
+          status: url.searchParams.get('status') ?? 'pending',
+          limit: Number.isFinite(limitParam) ? limitParam : 50,
+        })
+        sendJson(res, 200, { ...result, autoExtract: store.config.autoExtract })
+        return
+      }
+
+      if (sub === '/api/candidates' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        const added = await store.addCandidates([{ ...body, source: { app: 'http' } }])
+        sendJson(res, 200, { added })
+        return
+      }
+
+      if (sub === '/api/candidates/accept' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        sendJson(res, 200, await store.acceptCandidate({ id: body.id }))
+        return
+      }
+
+      if (sub === '/api/candidates/reject' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        sendJson(res, 200, await store.rejectCandidate({ id: body.id }))
+        return
+      }
+
+      if (sub === '/api/candidates/update' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        sendJson(res, 200, await store.updateCandidate({ id: body.id, text: body.text, kind: body.kind, tags: body.tags }))
+        return
+      }
+
+      if (sub === '/api/import' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        const content = typeof body.content === 'string' ? body.content : ''
+        if (content.length > 30 * 1024 * 1024) {
+          sendError(res, 413, 'PAYLOAD_TOO_LARGE', '导入文件最大 30MB')
+          return
+        }
+        const parsed = parseImportPayload(body.format || 'auto', content)
+        const result = await store.importConversations({
+          conversations: parsed.conversations,
+          app: typeof body.app === 'string' && body.app.trim() ? body.app.trim() : 'import',
+          extract: body.extract !== false,
+        })
         await store.writeHumanDigest()
         sendJson(res, 200, result)
         return

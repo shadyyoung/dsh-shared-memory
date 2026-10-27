@@ -105,6 +105,26 @@ node standalone/server.mjs --port 7400 [--host 127.0.0.1] [--store DIR] [--token
 - `apiToken` 启用时，页面本身匿名可打开，读写请求在页面内输入 token 后携带 `Authorization: Bearer`（仅存 localStorage）。
 - 页面用原生 DOM API 渲染（`textContent`），不拼接 HTML，避免把记忆内容当 HTML 执行。
 
+## 自动抽取与候选收件箱
+
+记忆增长不能只依赖模型主动调用 `memory_remember`，所以：
+
+- **触发**：每条 DSH 用户消息写入原话后，若长度 ≥ `extractMinChars` 且不是斜杠命令，进入 8 秒防抖队列（每批最多 10 条）。
+- **规则模式（默认，免费）**：按关键词抽「偏好 / 身份 / 目标 / 项目 / 待办」，每条消息最多 2 条，高精度低召回。
+- **模型模式（`autoExtract: llm`）**：调用 `ctx.llm.stream`（默认模型，可用 `extractModel` 指定便宜模型），要求输出严格 JSON 数组；每次调用计入 `maxExtractPerDay` 日配额（默认 30），超限不再调用。
+- **不直接写记忆**：抽取结果全部进 `candidates.json` 的「待确认」区，UI 里接受才成为正式记忆，拒绝留下记录避免重复抽取；接受时与现有记忆去重。
+- **导入历史**：解析 ChatGPT `mapping` / Claude `chat_messages` / jsonl / 纯文本，写成 `kind=message` 原话（每批上限 2000 条、同会话去重），再按同一抽取管线生成候选。
+
+## PII 与安全写入
+
+- 写入前（`remember` / `captureMessage` / 导入）跑 `scrubPii()`：识别 `sk-*`、`ghp_*`、`AKIA*`、`xox*`、Bearer、`password=/token=`、身份证号。
+- `piiPolicy=redact`（默认）直接替换为 `[已脱敏:...]`；`warn` 保留原文；`off` 关闭。
+- 注意：规则是启发式的，不能保证覆盖所有密钥格式；重要密钥仍建议不要粘贴进对话。
+
+## 接入自检
+
+`scripts/doctor.mjs` 会：请求 `/health` 验证服务版本；用当前 Node 启动 MCP 桥并完成 `initialize` + `tools/list` 握手；检查 Cursor `~/.cursor/mcp.json`、Codex `~/.codex/config.toml`、Claude Desktop `claude_desktop_config.json`、WorkBuddy skill 是否已登记 `shared-memory`。任一失败返回非零退出码。
+
 ## 备份与恢复
 
 存储都在 `~/.dsh/shared-memory/`，单文件损坏或误删可能丢全部记忆，所以：

@@ -53,7 +53,7 @@
 ```json
 {
   "name": "dsh-shared-memory",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "apiBase": "http://127.0.0.1:62877/dsh-memory",
   "origin": "http://127.0.0.1:62877",
   "storeDir": "/Users/<user>/.dsh/shared-memory",
@@ -92,6 +92,12 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 | GET | `/api/backups` | 备份列表 + 备份目录/保留数/自动间隔 |
 | POST | `/api/backup` | 立即创建一份全量备份 |
 | POST | `/api/restore-backup` | 从备份恢复（恢复前自动再备份当前状态） |
+| GET | `/api/candidates` | 待确认候选记忆列表（`status=pending/accepted/rejected/all`） |
+| POST | `/api/candidates` | 手动新增候选 |
+| POST | `/api/candidates/accept` | 接受候选 → 写成正式记忆 |
+| POST | `/api/candidates/reject` | 拒绝候选 |
+| POST | `/api/candidates/update` | 编辑候选（text/kind/tags） |
+| POST | `/api/import` | 导入 ChatGPT/Claude 导出或 jsonl/txt，生成原话 + 候选 |
 | POST | `/api/current` | 设置/清除焦点 |
 
 ### GET /health
@@ -100,7 +106,7 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 {
   "ok": true,
   "name": "dsh-shared-memory",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "startedAt": 1700000000000,
   "storeDir": "/Users/.../.dsh/shared-memory",
   "stats": { "memories": 42, "messages": 30, "sessions": 3, "hasFocus": true }
@@ -202,6 +208,30 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 ```
 
 从回收站恢复，返回 `{ "item": Memory, "restored": true }`；本来不在回收站则 `restored: false`。
+
+### 候选与导入 API
+
+`GET /api/candidates?status=pending&limit=50` →
+`{ items:[{id,text,kind,tags,reason,source,createdAt,status}], total, autoExtract }`。
+
+`POST /api/candidates/accept`：`{ "id": "cand_..." }` → `{ item, candidate, deduped }`。
+
+`POST /api/candidates/reject`：`{ "id": "cand_..." }` → `{ id, rejected }`。
+
+`POST /api/candidates/update`：`{ "id": "...", "text": "...", "kind": "preference", "tags": ["..."] }`。
+
+`POST /api/import`：
+
+```json
+{
+  "format": "auto | chatgpt | claude | jsonl | text",
+  "content": "<导出文件原文，最大 30MB>",
+  "app": "chatgpt",
+  "extract": true
+}
+```
+
+返回 `{ imported, conversations, candidates }`。导入的原话 `kind=message`、`source.app=import`；`extract` 为 true 时按 `autoExtract` 模式生成候选。
 
 ### 备份 API
 

@@ -94,6 +94,8 @@ apply(ctx, {
   apiToken: '',
   backupDir: path.join(storeDir, 'backups'),
   autoBackupHours: 0,
+  autoExtract: 'rules',
+  maxExtractPerDay: 50,
   autoFocusMinutes: 90,
   writeHumanDigest: true,
 })
@@ -331,6 +333,81 @@ assert.ok(purgedTrash.body.deleted >= 1)
 const emptyTrash = await api('/api/items?deleted=1')
 assert.equal(emptyTrash.body.total, 0)
 console.log('ok relevance / sort / usage / purge-trash')
+
+progress('candidates')
+const seededCandidate = await api('/api/candidates', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ text: '候选测试：用户偏好深色模式', kind: 'preference', tags: ['ui'], reason: '测试' }),
+})
+assert.equal(seededCandidate.status, 200)
+assert.equal(seededCandidate.body.added.length, 1)
+const pending = await api('/api/candidates?status=pending')
+assert.ok(pending.body.items.some((item) => item.text === '候选测试：用户偏好深色模式'))
+const candidateId = pending.body.items.find((item) => item.text === '候选测试：用户偏好深色模式').id
+const accepted = await api('/api/candidates/accept', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ id: candidateId }),
+})
+assert.equal(accepted.status, 200)
+assert.equal(accepted.body.item.text, '候选测试：用户偏好深色模式')
+assert.equal(accepted.body.candidate.status, 'accepted')
+const candidateMemory = await run('memory_search', { q: '候选测试' })
+assert.equal(candidateMemory.total, 1)
+const rejectedCandidate = await api('/api/candidates', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ text: '候选测试：这条会被拒绝', kind: 'note' }),
+})
+const rejectId = rejectedCandidate.body.added[0].id
+await api('/api/candidates/reject', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ id: rejectId }),
+})
+const pendingAfterReject = await api('/api/candidates?status=pending')
+assert.ok(!pendingAfterReject.body.items.some((item) => item.id === rejectId))
+console.log('ok candidates: pending/accept/reject')
+
+progress('import')
+const im = await api('/api/import', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    format: 'chatgpt',
+    app: 'chatgpt',
+    content: JSON.stringify([
+      {
+        title: '旧对话 A',
+        mapping: {
+          n1: { message: { author: { role: 'user' }, content: { parts: ['我喜欢用深色模式，讨厌弹窗广告'] } } },
+          n2: { message: { author: { role: 'assistant' }, content: { parts: ['收到'] } } },
+        },
+      },
+      {
+        title: '旧对话 B',
+        mapping: {
+          n1: { message: { author: { role: 'user' }, content: { parts: ['我在做一个共享记忆插件'] } } },
+        },
+      },
+    ]),
+  }),
+})
+assert.equal(im.status, 200)
+assert.equal(im.body.imported, 2)
+assert.ok(im.body.candidates >= 1, 'import extracts candidates')
+const importedSearch = await run('memory_search', { q: '弹窗广告' })
+assert.equal(importedSearch.total, 1)
+const pendingAfterImport = await api('/api/candidates?status=pending')
+assert.ok(pendingAfterImport.body.total >= 1)
+console.log('ok import: chatgpt export → messages + candidates')
+
+progress('pii')
+const piiRemember = await run('memory_remember', { text: '测试密钥 sk-abcdefghijklmnopqrstuvwxyz123456 不要外泄', kind: 'note' })
+assert.ok(!piiRemember.item.text.includes('sk-abcdefghijklmnopqrstuvwxyz123456'))
+assert.match(piiRemember.item.text, /已脱敏/)
+console.log('ok PII redaction on write')
 
 progress('http-export-ui')
 const exportRes = await fetch(origin + '/dsh-memory/api/export')

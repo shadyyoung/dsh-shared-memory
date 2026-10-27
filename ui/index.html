@@ -123,12 +123,21 @@
       <button id="refreshBackups">刷新</button>
     </div>
     <div id="backupList" style="margin-top:10px"></div>
+    <div style="margin-top:12px;border-top:1px dashed var(--border);padding-top:10px">
+      <div class="sub">导入 ChatGPT / Claude 导出的对话（JSON），或 txt/md 文本；导入后自动抽取候选记忆。</div>
+      <div class="actions" style="margin-top:8px">
+        <button id="importBtn">导入历史对话</button>
+        <input type="file" id="importFile" accept=".json,.jsonl,.txt,.md" class="hidden"/>
+        <span class="meta" id="importMeta"></span>
+      </div>
+    </div>
   </div>
 
   <div class="card">
     <h2>记忆列表</h2>
     <div class="tabs">
       <button class="tab active" id="tabActive">记忆</button>
+      <button class="tab" id="tabCandidates">待确认</button>
       <button class="tab" id="tabTrash">回收站</button>
       <button class="tab hidden" id="emptyTrash" style="margin-left:auto;color:var(--danger)">清空回收站</button>
     </div>
@@ -162,7 +171,7 @@
 <script>
 (() => {
   const BASE = location.pathname.replace(/\/ui\/?$/, '') || '/dsh-memory'
-  const state = { q: '', kind: '', sort: '', view: 'active', offset: 0, limit: 50, total: 0, items: [], editing: null, historyFor: null, token: localStorage.getItem('sm-token') || '' }
+  const state = { q: '', kind: '', sort: '', view: 'active', offset: 0, limit: 50, total: 0, items: [], candidates: [], editing: null, historyFor: null, token: localStorage.getItem('sm-token') || '' }
   const $ = (id) => document.getElementById(id)
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n }
   let toastTimer = null
@@ -348,6 +357,7 @@
   }
 
   async function refreshList() {
+    if (state.view === 'candidates') return loadCandidatesView()
     try {
       const params = new URLSearchParams({ limit: String(state.limit), offset: '0' })
       if (state.q) params.set('q', state.q)
@@ -460,9 +470,72 @@
     } catch (e) { toast(e.message) }
   }
 
+  function renderCandidate(item) {
+    const box = el('div', 'item')
+    const head = el('div', 'item-head')
+    head.append(el('span', 'kind ' + item.kind, item.kind))
+    head.append(el('span', 'meta', item.reason || '自动抽取'))
+    head.append(el('span', 'meta', fmt(item.createdAt)))
+    box.append(head)
+    const body = el('div', 'item-text', item.text)
+    box.append(body)
+    const actions = el('div', 'actions')
+    const accept = el('button', 'small primary', '接受'); accept.onclick = () => acceptCandidate(item)
+    const edit = el('button', 'small', '编辑'); edit.onclick = () => editCandidate(item, box, actions)
+    const reject = el('button', 'small danger', '拒绝'); reject.onclick = () => rejectCandidate(item)
+    actions.append(accept, edit, reject)
+    box.append(actions)
+    return box
+  }
+
+  function editCandidate(item, box, actions) {
+    const text = el('textarea'); text.rows = 3; text.value = item.text
+    const kind = el('select'); ['note','profile','preference','goal','project','task'].forEach(k => { const o = el('option', null, k); o.value = k; if (k === item.kind) o.selected = true; kind.append(o) })
+    const tags = el('input'); tags.type = 'text'; tags.value = (item.tags || []).join(', '); tags.placeholder = '标签，逗号分隔'
+    const save = el('button', 'primary small', '保存并接受')
+    save.onclick = async () => {
+      try {
+        await api('/api/candidates/update', { method: 'POST', body: JSON.stringify({ id: item.id, text: text.value, kind: kind.value, tags: tags.value.split(',').map(x => x.trim()).filter(Boolean) }) })
+        await acceptCandidate(item)
+      } catch (e) { toast(e.message) }
+    }
+    const cancel = el('button', 'small', '取消'); cancel.onclick = () => refreshList()
+    box.append(text, kind, tags)
+    actions.append(save, cancel)
+  }
+
+  async function acceptCandidate(item) {
+    try {
+      const res = await api('/api/candidates/accept', { method: 'POST', body: JSON.stringify({ id: item.id }) })
+      await refreshList(); await loadHealth()
+      toast(res.deduped ? '已存在相同记忆，已标记接受' : '已接受为记忆')
+    } catch (e) { toast(e.message) }
+  }
+
+  async function rejectCandidate(item) {
+    try {
+      await api('/api/candidates/reject', { method: 'POST', body: JSON.stringify({ id: item.id }) })
+      await refreshList(); await loadHealth(); toast('已拒绝')
+    } catch (e) { toast(e.message) }
+  }
+
+  async function loadCandidatesView() {
+    try {
+      const res = await api('/api/candidates?status=pending&limit=100')
+      state.candidates = res.items
+      const label = '待确认' + (res.total ? ' (' + res.total + ')' : '')
+      $('tabCandidates').textContent = label
+      const list = $('list'); list.textContent = ''
+      $('moreBtn').classList.add('hidden')
+      if (!res.items.length) list.append(el('div', 'empty', '没有待确认的候选记忆'))
+      for (const item of res.items) list.append(renderCandidate(item))
+    } catch (e) { toast(e.message) }
+  }
+
   function setView(view) {
     state.view = view; state.offset = 0; state.editing = null; state.historyFor = null
     $('tabActive').classList.toggle('active', view === 'active')
+    $('tabCandidates').classList.toggle('active', view === 'candidates')
     $('tabTrash').classList.toggle('active', view === 'trash')
     $('emptyTrash').classList.toggle('hidden', view !== 'trash')
     refreshList()
@@ -471,7 +544,22 @@
   let searchTimer = null
   function bind() {
     $('tabActive').onclick = () => setView('active')
+    $('tabCandidates').onclick = () => setView('candidates')
     $('tabTrash').onclick = () => setView('trash')
+    $('importBtn').onclick = () => $('importFile').click()
+    $('importFile').onchange = async (ev) => {
+      const file = ev.target.files && ev.target.files[0]
+      ev.target.value = ''
+      if (!file) return
+      try {
+        $('importMeta').textContent = '读取中…'
+        const text = await file.text()
+        $('importMeta').textContent = '导入中…'
+        const result = await api('/api/import', { method: 'POST', body: JSON.stringify({ format: 'auto', content: text, app: 'import' }) })
+        $('importMeta').textContent = '导入 ' + result.imported + ' 条消息 · 生成 ' + result.candidates + ' 条候选'
+        await refreshList(); await loadHealth()
+      } catch (e) { $('importMeta').textContent = ''; toast(e.message) }
+    }
     $('emptyTrash').onclick = emptyTrash
     $('backupNow').onclick = backupNow
     $('refreshBackups').onclick = loadBackups

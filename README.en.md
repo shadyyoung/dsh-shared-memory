@@ -7,7 +7,7 @@ A **cross-session, cross-app, cross-platform memory layer** (packaged as a DeepS
 - Shape: **Harness Host plugin** + **zero-dependency MCP stdio bridge** + **reusable agent skill**
 - Storage: `~/.dsh/shared-memory/`
 - Package / loader row: `@local/shared-memory` / `shared-memory`
-- Version: 1.5.0 · License: MIT
+- Version: 1.6.0 · License: MIT
 
 > The Chinese name is now **AI 跨平台记忆增强 1.0**; the English name stays **Shared Memory**. Internal identifiers (package, skill id, store path) are unchanged for compatibility.
 
@@ -136,7 +136,11 @@ Prerequisites: DeepSeek Harness Desktop (Cordis plugin system, `plugin_manager`)
 | Search | In-memory **BM25 inverted index** (CJK bigrams + latin words, tags indexed); `sort=relevance|newest` |
 | Model tools | `memory_remember` / `memory_search` / `memory_forget` / `memory_update` / `memory_restore` / `memory_current` |
 | Viewer / editor UI | `/dsh-memory/ui`: browse, search, edit, trash/restore, edit history, focus editor, **backup/restore**, JSONL export |
-| Automatic backup | Full gzipped snapshot every 24h to `~/.dsh/shared-memory-backups/` (keeps 14); manual backup + one-click restore in the UI |
+| Automatic backup | Full gzipped snapshot every 24h to `~/.dsh/shared-memory-backups/` (keeps 14); manual backup + one-click restore |
+| Auto extraction | Pulls durable facts from user messages into a **pending inbox** (rules mode by default, free; `llm` mode optional) |
+| Import history | ChatGPT / Claude `conversations.json`, jsonl, txt/md → raw messages + candidate memories |
+| PII redaction | `sk-*`, `ghp_*`, `AKIA*`, Bearer, `password=`, ID numbers → `[reducted]` on write |
+| Doctor | `npm run doctor`: checks DSH service, MCP bridge, Cursor, Codex, Claude Desktop, WorkBuddy |
 | HTTP API | `http://127.0.0.1:<port>/dsh-memory` (port from `runtime.json`) |
 | MCP bridge | `~/.dsh/shared-memory/mcp-server.mjs`, zero dependencies, stdio JSON-RPC |
 
@@ -188,6 +192,10 @@ Edit [cordis.patch.yml](cordis.patch.yml) and re-enable the bundle.
 | `backupDir` | `~/.dsh/shared-memory-backups` | backup directory (outside the store by default; point it at iCloud/Dropbox if you like) |
 | `backupKeep` | `14` | number of backups kept |
 | `autoBackupHours` | `24` | automatic backup interval in hours; 0 = off |
+| `autoExtract` | `rules` | `off` / `rules` (free) / `llm` (model extraction) |
+| `extractModel` | empty | provider/model for LLM extraction; empty = default model |
+| `maxExtractPerDay` | `30` | daily LLM extraction budget |
+| `piiPolicy` | `redact` | `off` / `warn` / `redact` |
 
 ## Verify
 
