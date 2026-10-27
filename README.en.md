@@ -7,7 +7,7 @@ A **cross-session, cross-app, cross-platform memory layer** (packaged as a DeepS
 - Shape: **Harness Host plugin** + **zero-dependency MCP stdio bridge** + **reusable agent skill**
 - Storage: `~/.dsh/shared-memory/`
 - Package / loader row: `@local/shared-memory` / `shared-memory`
-- Version: 1.4.0 · License: MIT
+- Version: 1.5.0 · License: MIT
 
 > The Chinese name is now **AI 跨平台记忆增强 1.0**; the English name stays **Shared Memory**. Internal identifiers (package, skill id, store path) are unchanged for compatibility.
 
@@ -135,7 +135,8 @@ Prerequisites: DeepSeek Harness Desktop (Cordis plugin system, `plugin_manager`)
 | Prompt digest | Injects `## Shared Memory` (≤1200 chars), fenced with `<memory-data>`, plus a **BM25 relevance** "related memories" section for the current topic |
 | Search | In-memory **BM25 inverted index** (CJK bigrams + latin words, tags indexed); `sort=relevance|newest` |
 | Model tools | `memory_remember` / `memory_search` / `memory_forget` / `memory_update` / `memory_restore` / `memory_current` |
-| Viewer / editor UI | Browser page at `/dsh-memory/ui`: browse, search, edit, trash/restore, edit history, focus editor, JSONL export |
+| Viewer / editor UI | `/dsh-memory/ui`: browse, search, edit, trash/restore, edit history, focus editor, **backup/restore**, JSONL export |
+| Automatic backup | Full gzipped snapshot every 24h to `~/.dsh/shared-memory-backups/` (keeps 14); manual backup + one-click restore in the UI |
 | HTTP API | `http://127.0.0.1:<port>/dsh-memory` (port from `runtime.json`) |
 | MCP bridge | `~/.dsh/shared-memory/mcp-server.mjs`, zero dependencies, stdio JSON-RPC |
 
@@ -184,6 +185,9 @@ Edit [cordis.patch.yml](cordis.patch.yml) and re-enable the bundle.
 | `trashRetentionDays` | `30` | trash retention; 0 = keep forever |
 | `maxRevisions` | `20` | edit-history versions kept per memory; 0 = none |
 | `maxRelevantMemories` | `4` | related-memory lines in the digest; 0 = off |
+| `backupDir` | `~/.dsh/shared-memory-backups` | backup directory (outside the store by default; point it at iCloud/Dropbox if you like) |
+| `backupKeep` | `14` | number of backups kept |
+| `autoBackupHours` | `24` | automatic backup interval in hours; 0 = off |
 
 ## Verify
 

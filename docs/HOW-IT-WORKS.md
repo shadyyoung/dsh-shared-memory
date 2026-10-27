@@ -105,6 +105,17 @@ node standalone/server.mjs --port 7400 [--host 127.0.0.1] [--store DIR] [--token
 - `apiToken` 启用时，页面本身匿名可打开，读写请求在页面内输入 token 后携带 `Authorization: Bearer`（仅存 localStorage）。
 - 页面用原生 DOM API 渲染（`textContent`），不拼接 HTML，避免把记忆内容当 HTML 执行。
 
+## 备份与恢复
+
+存储都在 `~/.dsh/shared-memory/`，单文件损坏或误删可能丢全部记忆，所以：
+
+- **快照内容**：`records`（含回收站/历史）+ `focus` + `activity` + `usage`，gzip 成一个自包含 JSON（`backup-<时间>-<随机>.json.gz`）。
+- **位置**：默认 `~/.dsh/shared-memory-backups/`（**在存储目录之外**，删库不删备份）；可改成 iCloud/Dropbox 目录实现离机备份。
+- **时机**：启动后若距上次备份超过 `autoBackupHours`（默认 24）自动备份，之后每小时检查一次；UI/API 可随时手动备份。
+- **保留**：按 mtime 保留最近 `backupKeep`（默认 14）份，更旧的自动删除。
+- **恢复**：校验文件名（防路径穿越）→ 解压解析 → 校验 schema → **先把当前状态备份成 `before-restore`** → 原子写入四个文件 → 重新加载内存索引。
+- 备份文件不会自动同步到云端；需要离机容灾时把 `backupDir` 指到 iCloud/Dropbox 同步目录即可。
+
 ## 检索与相关性摘要
 
 - **索引**：写内存中的倒排索引（`SearchIndex`），中文按 bigram 切分、英文按词，tags 也参与；每次写入/更新/purge 增量维护，启动时从 `memories.jsonl` 重建（10k 条约 20–100ms）。

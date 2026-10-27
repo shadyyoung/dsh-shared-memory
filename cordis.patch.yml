@@ -21,6 +21,9 @@
         trashRetentionDays: 30
         maxRevisions: 20
         maxRelevantMemories: 4
+        backupDir: '~/.dsh/shared-memory-backups'
+        backupKeep: 14
+        autoBackupHours: 24
         apiEnabled: true
         apiPath: /dsh-memory
         apiToken: ''

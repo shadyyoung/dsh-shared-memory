@@ -31,10 +31,11 @@ Options:
       --store <dir>       store directory (default ~/.dsh/shared-memory)
       --path <path>       HTTP route prefix (default /dsh-memory)
       --token <token>     require Authorization: Bearer <token> on /api/*
+      --backup-dir <dir>  backup directory (default ~/.dsh/shared-memory-backups)
   -h, --help              show this help
 
 Environment:
-  SHARED_MEMORY_PORT, SHARED_MEMORY_HOST, SHARED_MEMORY_STORE, SHARED_MEMORY_TOKEN
+  SHARED_MEMORY_PORT, SHARED_MEMORY_HOST, SHARED_MEMORY_STORE, SHARED_MEMORY_TOKEN, SHARED_MEMORY_BACKUP_DIR
 
 Note: run either this hub or the DeepSeek Harness plugin for a given store
 directory, not both at once (single-writer assumption).
@@ -55,6 +56,7 @@ function parseArgs(argv) {
     else if (token === '--store') args.store = value()
     else if (token === '--path') args.path = value()
     else if (token === '--token') args.token = value()
+    else if (token === '--backup-dir') args.backupDir = value()
     else if (token.startsWith('--')) {
       const [key, inline] = token.slice(2).split('=', 2)
       if (inline !== undefined) {
@@ -103,6 +105,7 @@ async function main() {
     storeDir: args.store ?? process.env.SHARED_MEMORY_STORE,
     apiPath: args.path ?? '/dsh-memory',
     apiToken: args.token ?? process.env.SHARED_MEMORY_TOKEN ?? '',
+    backupDir: args.backupDir ?? process.env.SHARED_MEMORY_BACKUP_DIR,
     // The hub has no Harness session events to capture and no prompt to inject.
     captureUserMessages: false,
     promptDigest: false,
@@ -151,6 +154,7 @@ async function main() {
   const origin = `http://${displayHost}:${actualPort}`
   const apiBase = origin + config.apiPath
 
+  const stopAutoBackup = store.startAutoBackup()
   await store.writeRuntime({ apiBase, origin, token: config.apiToken || null })
   await store.writeToken(config.apiToken)
   await store.writeHumanDigest()
@@ -177,6 +181,7 @@ async function main() {
     if (closing) return
     closing = true
     log(`${signal} received, flushing store`)
+    if (typeof stopAutoBackup === 'function') stopAutoBackup()
     await new Promise((resolve) => server.close(() => resolve()))
     try {
       await store.flush()

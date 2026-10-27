@@ -116,6 +116,16 @@
   </div>
 
   <div class="card">
+    <h2>备份与恢复</h2>
+    <div class="sub" id="backupMeta">正在读取备份状态…</div>
+    <div class="actions" style="margin-top:8px">
+      <button class="primary" id="backupNow">立即备份</button>
+      <button id="refreshBackups">刷新</button>
+    </div>
+    <div id="backupList" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
     <h2>记忆列表</h2>
     <div class="tabs">
       <button class="tab active" id="tabActive">记忆</button>
@@ -407,6 +417,49 @@
     } catch (e) { toast(e.message) }
   }
 
+  async function loadBackups() {
+    try {
+      const j = await api('/api/backups')
+      const parts = ['目录：' + (j.backupDir || '—'), '自动备份：' + (j.autoBackupHours ? '每 ' + j.autoBackupHours + ' 小时' : '关闭'), '保留：' + j.keep + ' 份']
+      if (j.lastBackupAt) parts.push('上次：' + fmt(j.lastBackupAt))
+      $('backupMeta').textContent = parts.join(' · ')
+      const list = $('backupList')
+      list.textContent = ''
+      if (!j.items || !j.items.length) {
+        list.append(el('div', 'empty', '还没有备份'))
+        return
+      }
+      for (const item of j.items) {
+        const row = el('div', 'rev')
+        const bits = [new Date(item.createdAt).toLocaleString('zh-CN')]
+        if (item.bytes) bits.push(Math.max(1, Math.round(item.bytes / 1024)) + ' KB')
+        if (item.counts) bits.push(item.counts.memories + ' 条记忆 / ' + item.counts.messages + ' 条原话')
+        row.append(el('div', 'meta', bits.join(' · ')))
+        const btn = el('button', 'small', '恢复')
+        btn.onclick = () => restoreBackup(item.name)
+        row.append(btn)
+        list.append(row)
+      }
+    } catch (e) { toast(e.message) }
+  }
+
+  async function backupNow() {
+    try {
+      await api('/api/backup', { method: 'POST', body: JSON.stringify({ reason: 'manual' }) })
+      await loadBackups()
+      toast('已创建备份')
+    } catch (e) { toast(e.message) }
+  }
+
+  async function restoreBackup(name) {
+    if (!confirm('从这个备份恢复？当前数据会先自动备份一份，然后被覆盖。')) return
+    try {
+      const result = await api('/api/restore-backup', { method: 'POST', body: JSON.stringify({ name }) })
+      await refreshList(); await loadFocus(); await loadHealth(); await loadBackups()
+      toast('已恢复：' + result.records + ' 条记忆')
+    } catch (e) { toast(e.message) }
+  }
+
   function setView(view) {
     state.view = view; state.offset = 0; state.editing = null; state.historyFor = null
     $('tabActive').classList.toggle('active', view === 'active')
@@ -420,6 +473,8 @@
     $('tabActive').onclick = () => setView('active')
     $('tabTrash').onclick = () => setView('trash')
     $('emptyTrash').onclick = emptyTrash
+    $('backupNow').onclick = backupNow
+    $('refreshBackups').onclick = loadBackups
     $('sortMode').onchange = (ev) => { state.sort = ev.target.value; refreshList() }
     $('refreshBtn').onclick = () => { refreshList(); loadFocus(); loadHealth() }
     $('exportBtn').onclick = exportAll
@@ -437,7 +492,7 @@
   }
 
   bind()
-  refreshList(); loadHealth(); loadFocus()
+  refreshList(); loadHealth(); loadFocus(); loadBackups()
 })()
 </script>
 </body>

@@ -19,13 +19,16 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
+import { gzipSync, gunzipSync } from 'node:zlib'
 
 export const name = 'shared-memory'
 export const inject = ['tools', 'systemPrompt', 'webServer']
 
 const PLUGIN_NAME = 'dsh-shared-memory'
-const VERSION = '1.4.0'
+const VERSION = '1.5.0'
 const DAY = 86400000
+/** A backup file name accepted by list/restore (path traversal guard). */
+const BACKUP_NAME = /^backup-[0-9A-Za-z._-]+\.json\.gz$/
 
 /** Memory kinds accepted by `memory_remember` and the HTTP API. */
 const REMEMBER_KINDS = ['note', 'profile', 'preference', 'goal', 'project', 'task']
@@ -43,6 +46,9 @@ const DEFAULT_CONFIG = {
   trashRetentionDays: 30,
   maxRevisions: 20,
   maxRelevantMemories: 4,
+  backupDir: '~/.dsh/shared-memory-backups',
+  backupKeep: 14,
+  autoBackupHours: 24,
   apiEnabled: true,
   apiPath: '/dsh-memory',
   apiToken: '',
@@ -74,6 +80,9 @@ function resolveConfig(raw) {
     trashRetentionDays: Math.round(number(src.trashRetentionDays, DEFAULT_CONFIG.trashRetentionDays, 0, 3650)),
     maxRevisions: Math.round(number(src.maxRevisions, DEFAULT_CONFIG.maxRevisions, 0, 100)),
     maxRelevantMemories: Math.round(number(src.maxRelevantMemories, DEFAULT_CONFIG.maxRelevantMemories, 0, 20)),
+    backupDir: expandHome(string(src.backupDir, DEFAULT_CONFIG.backupDir)),
+    backupKeep: Math.round(number(src.backupKeep, DEFAULT_CONFIG.backupKeep, 1, 365)),
+    autoBackupHours: number(src.autoBackupHours, DEFAULT_CONFIG.autoBackupHours, 0, 8760),
     apiEnabled: bool(src.apiEnabled, DEFAULT_CONFIG.apiEnabled),
     apiPath,
     apiToken: typeof src.apiToken === 'string' ? src.apiToken.trim() : '',
@@ -341,8 +350,15 @@ class SearchIndex {
   /** BM25 scores for one query; tokens absent from the index score zero. */
   score(queryTokens) {
     const scores = new Map()
+    for (const [id, info] of this.scoreDetailed(queryTokens)) scores.set(id, info.score)
+    return scores
+  }
+
+  /** BM25 scores plus how many distinct query tokens each document matched. */
+  scoreDetailed(queryTokens) {
+    const result = new Map()
     const docCount = this.docLengths.size
-    if (!docCount || !queryTokens.length) return scores
+    if (!docCount || !queryTokens.length) return result
     const averageLength = this.totalLength / docCount || 1
     const seen = new Set()
     const k1 = 1.2
@@ -357,10 +373,13 @@ class SearchIndex {
         const dl = this.docLengths.get(id) ?? averageLength
         const denom = tf + k1 * (1 - b + (b * dl) / averageLength)
         const value = idf * ((tf * (k1 + 1)) / denom)
-        scores.set(id, (scores.get(id) ?? 0) + value)
+        const entry = result.get(id) ?? { score: 0, matched: 0 }
+        entry.score += value
+        entry.matched += 1
+        result.set(id, entry)
       }
     }
-    return scores
+    return result
   }
 }
 
@@ -385,6 +404,8 @@ class SharedMemoryStore {
     this.usageTimer = null
     this.lastUserText = ''
     this.lastUserAt = 0
+    this.lastBackupAt = 0
+    this.backupTimer = null
     this.ready = this.#init()
   }
 
@@ -398,6 +419,7 @@ class SharedMemoryStore {
     await this.#loadFocus()
     await this.#loadActivity()
     await this.#loadUsage()
+    await this.#loadBackupState()
     await this.#pruneTrash()
   }
 
@@ -674,12 +696,19 @@ class SharedMemoryStore {
     if (!active.length) return []
     const cleanQuery = typeof query === 'string' ? query.trim() : ''
     if (!cleanQuery) return active.sort((a, b) => b.createdAt - a.createdAt).slice(0, max)
-    const scores = this.index.score(tokenizeForIndex(cleanQuery))
+    const queryTokens = tokenizeForIndex(cleanQuery)
+    const uniqueTokens = new Set(queryTokens)
+    const neededCoverage = Math.max(1, Math.ceil(uniqueTokens.size * 0.5))
+    const detailed = this.index.scoreDetailed(queryTokens)
     const lower = cleanQuery.toLowerCase()
     const ranked = []
     for (const record of active) {
-      let score = scores.get(record.id) ?? 0
-      if (`${record.text}\n${record.tags.join(' ')}`.toLowerCase().includes(lower)) score += 2
+      const info = detailed.get(record.id)
+      const substring = `${record.text}\n${record.tags.join(' ')}`.toLowerCase().includes(lower)
+      if (!info && !substring) continue
+      if (info && info.matched < neededCoverage) continue
+      let score = info ? info.score : 0
+      if (substring) score += 2
       if (score <= 0) continue
       ranked.push({ record, score })
     }
@@ -719,7 +748,9 @@ class SharedMemoryStore {
     if (query) {
       const lower = query.toLowerCase()
       const queryTokens = tokenizeForIndex(query)
-      const scores = queryTokens.length ? this.index.score(queryTokens) : new Map()
+      const uniqueTokens = new Set(queryTokens)
+      const neededCoverage = Math.max(1, Math.ceil(uniqueTokens.size * 0.5))
+      const detailed = queryTokens.length ? this.index.scoreDetailed(queryTokens) : new Map()
       if (!queryTokens.length) {
         // Extremely short queries (one latin char) have no tokens; fall back to substring.
         ordered = this.records
@@ -735,7 +766,10 @@ class SharedMemoryStore {
       const candidates = []
       for (const record of this.records) {
         if (!matchesFilter(record)) continue
-        let score = scores.get(record.id) ?? 0
+        const info = detailed.get(record.id)
+        if (!info && !`${record.text}\n${record.tags.join(' ')}`.toLowerCase().includes(lower)) continue
+        if (info && info.matched < neededCoverage) continue
+        let score = info ? info.score : 0
         if (`${record.text}\n${record.tags.join(' ')}`.toLowerCase().includes(lower)) score += 3
         if (score <= 0) continue
         const usageBoost = 1 + 0.15 * Math.log1p(this.usageFor(record.id).count)
@@ -869,6 +903,211 @@ class SharedMemoryStore {
       this.#changed()
     }
     return { ...record }
+  }
+
+  backupFile(name) {
+    return path.join(this.config.backupDir, name)
+  }
+
+  async #loadBackupState() {
+    try {
+      const entries = await fsp.readdir(this.config.backupDir)
+      let newest = 0
+      for (const entry of entries) {
+        if (!BACKUP_NAME.test(entry)) continue
+        const stat = await fsp.stat(this.backupFile(entry))
+        if (stat.mtimeMs > newest) newest = stat.mtimeMs
+      }
+      this.lastBackupAt = newest
+    } catch {
+      // No backup directory yet.
+    }
+  }
+
+  /** Create one gzipped, self-contained backup (records + focus + activity + usage). */
+  async createBackup({ reason = 'manual' } = {}) {
+    await this.ready
+    await fsp.mkdir(this.config.backupDir, { recursive: true })
+    const now = Date.now()
+    const payload = {
+      schema: 'shared-memory-backup',
+      version: 1,
+      createdAt: now,
+      reason,
+      counts: this.stats(),
+      focus: this.focus,
+      activity: Object.fromEntries(this.activity),
+      usage: Object.fromEntries(this.usage),
+      records: this.records,
+    }
+    const body = gzipSync(Buffer.from(JSON.stringify(payload), 'utf8'))
+    const stamp = new Date(now).toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const name = `backup-${stamp}-${randomUUID().slice(0, 6)}.json.gz`
+    const target = this.backupFile(name)
+    await this.#enqueue(async () => {
+      const temp = `${target}.tmp`
+      await fsp.writeFile(temp, body)
+      await fsp.rename(temp, target)
+    })
+    this.lastBackupAt = now
+    const metadata = {
+      name,
+      createdAt: now,
+      bytes: body.length,
+      reason,
+      counts: payload.counts,
+    }
+    await this.#pruneBackups()
+    return metadata
+  }
+
+  async #pruneBackups() {
+    const keep = this.config.backupKeep
+    if (!(keep > 0)) return
+    let entries = []
+    try {
+      entries = await fsp.readdir(this.config.backupDir)
+    } catch {
+      return
+    }
+    const files = []
+    for (const entry of entries) {
+      if (!BACKUP_NAME.test(entry)) continue
+      try {
+        const stat = await fsp.stat(this.backupFile(entry))
+        files.push({ name: entry, mtimeMs: stat.mtimeMs })
+      } catch {
+        // Ignore races with concurrent pruning.
+      }
+    }
+    files.sort((a, b) => b.mtimeMs - a.mtimeMs)
+    for (const file of files.slice(keep)) {
+      try {
+        await fsp.rm(this.backupFile(file.name))
+      } catch {
+        // Best effort.
+      }
+    }
+  }
+
+  /** List backups newest-first, including their counts when the payload parses. */
+  async listBackups(limit = 50) {
+    await this.ready
+    let entries = []
+    try {
+      entries = await fsp.readdir(this.config.backupDir)
+    } catch {
+      return { backupDir: this.config.backupDir, keep: this.config.backupKeep, autoBackupHours: this.config.autoBackupHours, lastBackupAt: 0, items: [] }
+    }
+    const files = []
+    for (const entry of entries) {
+      if (!BACKUP_NAME.test(entry)) continue
+      try {
+        const stat = await fsp.stat(this.backupFile(entry))
+        files.push({ name: entry, mtimeMs: stat.mtimeMs, bytes: stat.size })
+      } catch {
+        // Ignore transient entries.
+      }
+    }
+    files.sort((a, b) => b.mtimeMs - a.mtimeMs)
+    const items = []
+    for (const file of files.slice(0, Math.max(1, Math.min(200, limit)))) {
+      let counts
+      let createdAt = file.mtimeMs
+      try {
+        const payload = JSON.parse(gunzipSync(await fsp.readFile(this.backupFile(file.name))).toString('utf8'))
+        counts = payload.counts
+        if (Number.isFinite(payload.createdAt)) createdAt = payload.createdAt
+      } catch {
+        // A broken backup still appears in the list so it can be inspected/removed.
+      }
+      items.push({ name: file.name, createdAt, bytes: file.bytes, counts })
+    }
+    return {
+      backupDir: this.config.backupDir,
+      keep: this.config.backupKeep,
+      autoBackupHours: this.config.autoBackupHours,
+      lastBackupAt: this.lastBackupAt || (items[0] ? items[0].createdAt : 0),
+      items,
+    }
+  }
+
+  /** Restore one backup: snapshot the current state first, then replace and reload. */
+  async restoreBackup({ name } = {}) {
+    await this.ready
+    if (typeof name !== 'string' || !BACKUP_NAME.test(name)) {
+      const error = new Error('备份名称不合法')
+      error.statusCode = 400
+      throw error
+    }
+    const target = this.backupFile(name)
+    let payload
+    try {
+      payload = JSON.parse(gunzipSync(await fsp.readFile(target)).toString('utf8'))
+    } catch {
+      const error = new Error('备份文件无法读取或已损坏')
+      error.statusCode = 400
+      throw error
+    }
+    if (!isPlainObject(payload) || payload.schema !== 'shared-memory-backup' || !Array.isArray(payload.records)) {
+      const error = new Error('备份格式不支持')
+      error.statusCode = 400
+      throw error
+    }
+    const records = payload.records.map((record) => normalizeRecord(record)).filter(Boolean)
+    if (!records.length && payload.records.length) {
+      const error = new Error('备份里没有可恢复的有效记录')
+      error.statusCode = 400
+      throw error
+    }
+    await this.createBackup({ reason: 'before-restore' })
+
+    const focus = isPlainObject(payload.focus) && typeof payload.focus.text === 'string' ? payload.focus : null
+    const activity = isPlainObject(payload.activity) ? payload.activity : {}
+    const usage = isPlainObject(payload.usage) ? payload.usage : {}
+    const memoriesBody = records.map((record) => JSON.stringify(record)).join('\n') + (records.length ? '\n' : '')
+    await Promise.all([
+      atomicWrite(this.file('memories.jsonl'), memoriesBody),
+      atomicWrite(this.file('focus.json'), JSON.stringify(focus) + '\n'),
+      atomicWrite(this.file('activity.json'), JSON.stringify(activity, null, 2) + '\n'),
+      atomicWrite(this.file('usage.json'), JSON.stringify(usage, null, 2) + '\n'),
+    ])
+    await this.reload()
+    return { restored: name, records: this.records.length, counts: this.stats() }
+  }
+
+  /** Re-read every store file into memory (used after a backup restore). */
+  async reload() {
+    this.records = []
+    this.focus = null
+    this.activity = new Map()
+    this.usage = new Map()
+    await this.#loadMemories()
+    await this.#loadFocus()
+    await this.#loadActivity()
+    await this.#loadUsage()
+    this.index.reset(this.records)
+    this.#changed()
+  }
+
+  /** Start the periodic auto-backup timer; returns a disposer. */
+  startAutoBackup() {
+    const hours = this.config.autoBackupHours
+    if (!(hours > 0)) return () => {}
+    const intervalMs = Math.min(hours * 3600000, 3600000)
+    const tick = () => {
+      const now = Date.now()
+      if (this.lastBackupAt && now - this.lastBackupAt < hours * 3600000) return
+      void this.createBackup({ reason: 'auto' }).catch(() => undefined)
+    }
+    const initial = setTimeout(tick, 5000)
+    initial.unref?.()
+    const interval = setInterval(tick, intervalMs)
+    interval.unref?.()
+    return () => {
+      clearTimeout(initial)
+      clearInterval(interval)
+    }
   }
 
   /** Serialize the whole store as JSONL (for the export endpoint). */
@@ -1049,19 +1288,22 @@ class SharedMemoryStore {
     push('- 原话缓存只用于近期检索，会按保留期自动过期；真正长期留下来的只有你主动写入的记忆条目。')
     push('- 这些记忆与用户的其他会话、其他 AI 应用共享；不要假装不知道用户在其他会话说过的事。')
 
-    let output = []
+    const joined = lines.join('\n')
+    if (joined.length <= maxChars) return joined
+    // Capped digests must stay within maxChars: reserve room for the ellipsis and the closing fence.
+    const marker = '…（其余记忆可用 memory_search 查询）'
+    const closing = lines.includes('<memory-data>') ? '</memory-data>' : ''
+    const budget = Math.max(0, maxChars - marker.length - (closing ? closing.length + 1 : 0) - 1)
+    const output = []
     let used = 0
     for (const line of lines) {
       const cost = line.length + 1
-      if (used + cost > maxChars) {
-        output.push('…（其余记忆可用 memory_search 查询）')
-        break
-      }
+      if (used + cost > budget) break
       output.push(line)
       used += cost
     }
-    // Never leave an unterminated data fence just because the digest was capped.
-    if (output.includes('<memory-data>') && !output.includes('</memory-data>')) output.push('</memory-data>')
+    output.push(marker)
+    if (closing) output.push(closing)
     return output.join('\n')
   }
 
@@ -1113,7 +1355,8 @@ class SharedMemoryStore {
 
   /** Write the store README once per version. */
   async writeReadme() {
-    const body = `# 共享记忆存储\n\n由 DeepSeek Harness 插件 ${PLUGIN_NAME} v${VERSION} 维护。所有 AI 应用通过本地 HTTP API 读写这里。\n\n- 记忆：\`memories.jsonl\`（一行一条，勿手工插入非法 JSON）\n- 当前任务：\`focus.json\`\n- 会话动态：\`activity.json\`\n- 服务地址：\`runtime.json\`（Harness 运行时写入）\n- MCP 桥：\`mcp-server.mjs\`（\`node ${path.join(this.dir, 'mcp-server.mjs')}\`）\n- 接入其他 AI 应用：\`CONNECT-APPS.md\`\n\n默认仅监听本机回环地址。设置插件 config 的 \`apiToken\` 可要求 Bearer 鉴权。\n`
+    const body = `# 共享记忆存储\n\n由 DeepSeek Harness 插件 ${PLUGIN_NAME} v${VERSION} 维护。所有 AI 应用通过本地 HTTP API 读写这里。\n\n- 记忆：\`memories.jsonl\`（一行一条，勿手工插入非法 JSON）\n- 当前任务：\`focus.json\`\n- 会话动态：\`activity.json\`\n- 服务地址：\`runtime.json\`（Harness 运行时写入）\n- MCP 桥：\`mcp-server.mjs\`（\`node ${path.join(this.dir, 'mcp-server.mjs')}\`）\n- 接入其他 AI 应用：\`CONNECT-APPS.md\`
+- 备份：默认写到 \`${this.config.backupDir}\`（在存储目录之外；可指到 iCloud/Dropbox）\n\n默认仅监听本机回环地址。设置插件 config 的 \`apiToken\` 可要求 Bearer 鉴权。\n`
     await fsp.writeFile(this.file('README.md'), body, 'utf8')
   }
 }
@@ -1587,6 +1830,20 @@ export function apply(ctx, rawConfig) {
     use(() => ctx.webServer.register({ kind: 'prefix', path: config.apiPath, handler }))
   }
 
+  // ---- Auto backup -------------------------------------------------------
+  let stopAutoBackup = null
+  use(() => {
+    void store.ready
+      .then(() => {
+        stopAutoBackup = store.startAutoBackup()
+      })
+      .catch(() => undefined)
+    return () => {
+      if (stopAutoBackup) stopAutoBackup()
+      stopAutoBackup = null
+    }
+  })
+
   // ---- Runtime discovery + MCP bridge -----------------------------------
   let publishAttempts = 0
   const publish = () => {
@@ -1763,6 +2020,9 @@ function createApiHandler(store, config, diag) {
             'POST /api/forget',
             'POST /api/restore',
             'POST /api/purge-trash',
+            'GET /api/backups',
+            'POST /api/backup',
+            'POST /api/restore-backup',
             'POST /api/current',
             'GET /ui',
           ],
@@ -1897,6 +2157,30 @@ function createApiHandler(store, config, diag) {
 
       if (sub === '/api/purge-trash' && req.method === 'POST') {
         const result = await store.purgeTrash()
+        await store.writeHumanDigest()
+        sendJson(res, 200, result)
+        return
+      }
+
+      if (sub === '/api/backups' && req.method === 'GET') {
+        sendJson(res, 200, await store.listBackups())
+        return
+      }
+
+      if (sub === '/api/backup' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        const backup = await store.createBackup({ reason: typeof body.reason === 'string' ? body.reason : 'manual' })
+        sendJson(res, 200, { backup })
+        return
+      }
+
+      if (sub === '/api/restore-backup' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        if (typeof body.name !== 'string' || !body.name.trim()) {
+          sendError(res, 400, 'BAD_REQUEST', 'name 必填')
+          return
+        }
+        const result = await store.restoreBackup({ name: body.name.trim() })
         await store.writeHumanDigest()
         sendJson(res, 200, result)
         return

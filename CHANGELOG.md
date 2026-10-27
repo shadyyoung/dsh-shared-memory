@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.5.0 — 2026-10-27
+
+### 新增 / Added
+
+- **自动备份**：启动后（距上次超过间隔时）及每小时检查一次，把全量数据（记录/焦点/动态/使用统计）gzip 快照到 `backupDir`（默认 `~/.dsh/shared-memory-backups`，在存储目录之外），按 `backupKeep`（默认 14）轮转清理。
+- **手动备份 / 恢复**：
+  - `POST /api/backup`、`GET /api/backups`、`POST /api/restore-backup`
+  - 恢复前自动再备份当前状态（`before-restore`），恢复本身也可回退
+  - 文件名白名单校验，防路径穿越；校验 schema 后原子写入并热重载内存
+- **UI**：「备份与恢复」卡片，显示备份目录/间隔/上次时间，一键备份、列表、恢复。
+- **standalone hub**：`--backup-dir` / `SHARED_MEMORY_BACKUP_DIR`，同样启用自动备份。
+- **检索精度**：查询词覆盖率过滤（至少匹配一半词元），避免短查询被无关记录稀释。
+- **摘要截断**：严格不超过 `maxChars`（预留省略号与围栏空间）。
+
+### 配置 / Config
+
+- `backupDir`（默认 `~/.dsh/shared-memory-backups`）
+- `backupKeep`（默认 14）
+- `autoBackupHours`（默认 24，0=关闭自动备份）
+
+### 测试 / Tests
+
+- host-smoke：创建备份 → 删除记录 → 恢复 → 记录回来；恢复前自动快照；非法文件名 400。
+- standalone-smoke：hub 备份 + 恢复。
+- 高覆盖率检索与摘要上限回归。
+
 ## v1.4.0 — 2026-10-27
 
 ### 新增 / Added

@@ -21,7 +21,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** Start the hub and wait for its JSON listening line. */
 async function startHub() {
-  const child = spawn(process.execPath, [serverPath, '--port', '0', '--store', storeDir], {
+  const child = spawn(process.execPath, [serverPath, '--port', '0', '--store', storeDir, '--backup-dir', path.join(storeDir, 'backups')], {
     cwd: ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -154,6 +154,17 @@ try {
   assert.equal(restored.status, 200)
   assert.equal(restored.body.restored, true)
   console.log('ok soft delete + restore')
+
+  // 3d. backup + restore
+  const backup = await post('/api/backup', { reason: 'test' })
+  assert.equal(backup.status, 200)
+  assert.match(backup.body.backup.name, /^backup-.+\.json\.gz$/)
+  const backups = await api('/api/backups')
+  assert.ok(backups.body.items.some((item) => item.name === backup.body.backup.name))
+  const restoredBackup = await post('/api/restore-backup', { name: backup.body.backup.name })
+  assert.equal(restoredBackup.status, 200)
+  assert.equal(restoredBackup.body.restored, backup.body.backup.name)
+  console.log('ok backup + restore')
 
   // 4. MCP bridge against the same hub
   const status = await callBridgeTool(base, 'memory_status')

@@ -92,6 +92,8 @@ apply(ctx, {
   apiEnabled: true,
   apiPath: '/dsh-memory',
   apiToken: '',
+  backupDir: path.join(storeDir, 'backups'),
+  autoBackupHours: 0,
   autoFocusMinutes: 90,
   writeHumanDigest: true,
 })
@@ -380,6 +382,48 @@ const digestFile = await fsp.readFile(path.join(storeDir, 'digest.md'), 'utf8')
 assert.match(digestFile, /共享记忆快照/)
 assert.match(await fsp.readFile(path.join(storeDir, 'memories.jsonl'), 'utf8'), /来自 Claude 的记忆/)
 console.log('ok store files: runtime.json / README.md / digest.md / memories.jsonl')
+
+progress('backups')
+const doomed = await run('memory_remember', { text: '备份测试：这条将在恢复前被彻底删除', kind: 'note' })
+const madeBackup = await api('/api/backup', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ reason: 'test' }),
+})
+assert.equal(madeBackup.status, 200)
+assert.match(madeBackup.body.backup.name, /^backup-.+\.json\.gz$/)
+assert.ok(madeBackup.body.backup.counts.memories >= 1)
+const backupList = await api('/api/backups')
+assert.equal(backupList.status, 200)
+assert.ok(backupList.body.items.some((item) => item.name === madeBackup.body.backup.name))
+assert.equal(backupList.body.backupDir, path.join(storeDir, 'backups'))
+
+// modify the store, then restore the snapshot
+await api('/api/forget', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ id: doomed.item.id, purge: true }),
+})
+const goneSearch = await run('memory_search', { q: '备份测试' })
+assert.equal(goneSearch.total, 0)
+const restoredBackup = await api('/api/restore-backup', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ name: madeBackup.body.backup.name }),
+})
+assert.equal(restoredBackup.status, 200)
+assert.equal(restoredBackup.body.restored, madeBackup.body.backup.name)
+const backSearch = await run('memory_search', { q: '备份测试' })
+assert.equal(backSearch.total, 1, 'restored backup brings deleted record back')
+const backupsAfterRestore = await api('/api/backups')
+assert.ok(backupsAfterRestore.body.items.length >= 2, 'a pre-restore snapshot is created automatically')
+const badName = await api('/api/restore-backup', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ name: '../secret' }),
+})
+assert.equal(badName.status, 400)
+console.log('ok backup / list / restore / pre-restore snapshot')
 
 progress('auth')
 const tokenDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'shared-memory-token-'))

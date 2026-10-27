@@ -53,7 +53,7 @@
 ```json
 {
   "name": "dsh-shared-memory",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "apiBase": "http://127.0.0.1:62877/dsh-memory",
   "origin": "http://127.0.0.1:62877",
   "storeDir": "/Users/<user>/.dsh/shared-memory",
@@ -89,6 +89,9 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 | POST | `/api/forget` | 删除记忆（默认进回收站，`purge: true` 彻底删除） |
 | POST | `/api/restore` | 从回收站恢复记忆 |
 | POST | `/api/purge-trash` | 清空回收站（彻底删除） |
+| GET | `/api/backups` | 备份列表 + 备份目录/保留数/自动间隔 |
+| POST | `/api/backup` | 立即创建一份全量备份 |
+| POST | `/api/restore-backup` | 从备份恢复（恢复前自动再备份当前状态） |
 | POST | `/api/current` | 设置/清除焦点 |
 
 ### GET /health
@@ -97,7 +100,7 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 {
   "ok": true,
   "name": "dsh-shared-memory",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "startedAt": 1700000000000,
   "storeDir": "/Users/.../.dsh/shared-memory",
   "stats": { "memories": 42, "messages": 30, "sessions": 3, "hasFocus": true }
@@ -199,6 +202,20 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 ```
 
 从回收站恢复，返回 `{ "item": Memory, "restored": true }`；本来不在回收站则 `restored: false`。
+
+### 备份 API
+
+`GET /api/backups` 返回 `{ backupDir, keep, autoBackupHours, lastBackupAt, items: [{ name, createdAt, bytes, counts }] }`。
+
+`POST /api/backup` 返回 `{ backup: { name, createdAt, bytes, reason, counts } }`。
+
+`POST /api/restore-backup`：
+
+```json
+{ "name": "backup-2026-10-27T10-30-00-abc123.json.gz" }
+```
+
+返回 `{ restored, records, counts }`。恢复前会先自动备份当前状态（`reason: "before-restore"`），所以恢复本身也可回退。
 
 ### GET /api/items 的回收站参数
 
