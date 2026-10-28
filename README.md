@@ -1,309 +1,267 @@
-# AI 跨平台记忆增强 · Shared Memory
+<p align="center">
+  <a href="https://github.com/shadyyoung/dsh-shared-memory/releases">
+    <img src="docs/assets/banner.svg" alt="AI 跨平台记忆增强 · Shared Memory" width="100%">
+  </a>
+</p>
 
-[English](README.en.md) | 中文
+<h1 align="center">AI 跨平台记忆增强 · Shared Memory</h1>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-6C5CE7)
-![MCP stdio](https://img.shields.io/badge/MCP-stdio-16A34A)
-![CI](https://github.com/shadyyoung/dsh-shared-memory/actions/workflows/ci.yml/badge.svg)
+<p align="center">
+  <b>一份记忆，所有 AI 应用共享。</b><br>
+  记住你的偏好、项目和「我现在在做什么」——跨会话、跨工作区、跨应用。
+</p>
 
-**跨会话、跨 AI 应用、跨平台**的记忆增强层（DeepSeek Harness 插件形态）：让**所有会话**（包括不同工作区、不同会话）和**其他 AI 应用**共用同一份记忆 —— 记住用户说过的话、长期偏好、正在做的项目，以及“现在要做的事”。
+<p align="center">
+  <a href="https://github.com/shadyyoung/dsh-shared-memory/releases"><img src="https://img.shields.io/github/v/release/shadyyoung/dsh-shared-memory?label=release&color=8b5cf6" alt="Release"></a>
+  <a href="https://github.com/shadyyoung/dsh-shared-memory/actions/workflows/ci.yml"><img src="https://github.com/shadyyoung/dsh-shared-memory/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT">
+  <img src="https://img.shields.io/badge/Node-%E2%89%A518-339933?logo=node.js&logoColor=white" alt="Node >= 18">
+  <img src="https://img.shields.io/badge/MCP-stdio-16a34a" alt="MCP stdio">
+  <img src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-ok-0ea5e9" alt="Platforms">
+</p>
 
-- 形态：**DeepSeek Harness Host 插件（bundle）** + **零依赖 MCP stdio 桥** + **可复用 Agent Skill**
-- 存储位置：`~/.dsh/shared-memory/`
-- 包名 / 行 id：`@local/shared-memory` / `shared-memory`
-- 版本：1.6.2 · License：MIT
+<p align="center">
+  <a href="docs/API.md">API 契约</a> ·
+  <a href="docs/HOW-IT-WORKS.md">工作原理</a> ·
+  <a href="docs/CONNECT-APPS.md">应用接入</a> ·
+  <a href="CHANGELOG.md">更新日志</a> ·
+  <a href="README.en.md">English</a>
+</p>
 
-> 原名 **共享记忆**，自 v1.0.0 起中文名改为 **AI 跨平台记忆增强 1.0**；**英文名保持 Shared Memory 不变**。内部标识（包名、skill id、存储目录）保持不变，不影响已有安装与数据。
+---
 
-> 注意：它**不是**一个单独的 Agent Skill。Skill 只是「客户端适配层」——让 WorkBuddy / 其他支持 skills 的 Agent 学会调用本插件暴露的 HTTP API。真正的记忆服务是 Harness 插件，其他应用通过 MCP 桥或 HTTP 接入。
+## 这是什么
 
-## 仓库结构
+一个**本地优先**的共享记忆层，目前以 **DeepSeek Harness 插件**形态运行，并提供 **MCP stdio 桥** 与 **HTTP API**，让 Cursor、Claude Desktop、ChatGPT 桌面版、WorkBuddy 等应用读写同一份记忆。
 
-```
-├── index.js                  # Host 插件：捕获/存储/工具/提示注入/HTTP API
-├── cordis.patch.yml          # bundle 行声明与默认 config
-├── standalone/server.mjs     # 独立 Hub（不依赖 DSH，跨平台）
-├── ui/index.html             # 浏览器查看/编辑页面（/dsh-memory/ui）
-├── mcp/server.mjs            # 零依赖 MCP stdio 桥（复制到 ~/.dsh/shared-memory/）
-├── skills/shared-memory/     # 可复用 Agent Skill（WorkBuddy 等）
-│   └── SKILL.md
-├── docs/API.md               # 冻结的 HTTP / 存储 / MCP 约定
-├── docs/HOW-IT-WORKS.md      # 工作原理与设计说明
-├── docs/CONNECT-APPS.md      # 各 AI 应用接入说明
-├── docs/assets/architecture.svg
-├── test/host-smoke.mjs       # Host 半集成测试
-├── test/mcp-smoke.mjs        # MCP 协议冒烟测试（35 项断言）
-├── test/standalone-smoke.mjs # 独立 Hub + 桥的端到端测试
-├── .github/workflows/ci.yml  # 三平台 CI（macOS / Linux / Windows）
-├── locale/en.json · zh.json  # 插件显示名
-├── CHANGELOG.md
-└── icon.svg
-```
+它做的四件事：
 
-## 架构
+| | 能力 | 效果 |
+|---|---|---|
+| 🎯 | **自动捕获** | 每个会话的用户消息、当前焦点、会话动态自动入库 |
+| 🧠 | **自动抽取** | 从对话里挑出偏好/身份/目标/项目 → 进「待确认」收件箱，接受才落库 |
+| 🔍 | **BM25 检索** | 中文 bigram + 英文词 + 标签倒排索引，相关性排序 |
+| 💉 | **相关性注入** | 每个模型请求前注入摘要（≤1200 字）+ 按当前话题召回的相关记忆 |
 
-```mermaid
-flowchart LR
-    subgraph Apps["其他 AI 应用"]
-        WB[WorkBuddy<br/>skill + curl]
-        CUR[Cursor<br/>MCP stdio]
-        CDX[ChatGPT Codex<br/>MCP stdio]
-        CL[Claude Desktop / Code<br/>MCP stdio]
-    end
+> [!NOTE]
+> **它不是 Agent Skill。** Skill 只是给 WorkBuddy 等客户端的适配层；真正的记忆服务是 DSH 插件 / 独立 Hub，其他应用通过 MCP 桥或 HTTP 接入。
 
-    subgraph DSH["DeepSeek Harness 进程"]
-        EV[会话事件<br/>session/event]
-        PLUG[共享记忆插件<br/>SharedMemoryStore]
-        PROMPT[系统提示摘要<br/>order 700 · 每个 step]
-        TOOLS[memory_* 工具]
-        HTTP[HTTP API<br/>/dsh-memory]
-        MCP[MCP 桥<br/>mcp-server.mjs]
-    end
+> [!IMPORTANT]
+> **单写者**：同一个 store 目录只能运行「DSH 插件」或「独立 Hub」其中一个，不要同时跑。
 
-    STORE[(~/.dsh/shared-memory<br/>memories.jsonl · focus.json · activity.json)]
+## 界面
 
-    EV --> PLUG
-    PLUG <--> STORE
-    PLUG --> PROMPT
-    TOOLS --> PLUG
-    WB --> HTTP
-    CUR --> MCP
-    CDX --> MCP
-    CL --> MCP
-    MCP --> HTTP
-    HTTP <--> PLUG
-    PROMPT --> LLM[模型请求]
-```
+<p align="center">
+  <img src="docs/assets/ui.png" alt="Web UI：焦点、备份、记忆列表、待确认、回收站" width="100%">
+</p>
 
-![架构图](docs/assets/architecture.svg)
+浏览器打开 `/dsh-memory/ui`（地址随 DSH 端口变化，用 `node -e 'console.log(require(process.env.HOME+"/.dsh/shared-memory/runtime.json").origin)'` 或 `~/.dsh/shared-memory/open-ui.sh` 获取）：
 
-> 设计取舍、数据流、生命周期、安全边界见 [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)。
+- 记忆/回收站/待确认三个视图，搜索高亮 + 相关性/最新排序
+- 编辑、软删除、恢复、彻底删除、编辑历史回滚
+- 当前焦点编辑、JSONL 导出
+- 备份/恢复、导入 ChatGPT/Claude 历史对话
+- 统计：记忆数、原话数、回收站数、会话数、使用次数
 
-## 两种运行方式
+## 快速开始
 
-| 方式 | 需要 DSH | 能力 | 适合 |
-|---|---|---|---|
-| **DSH 插件**（默认） | ✅ | 自动捕获会话消息、系统提示注入、模型工具、HTTP、MCP | 日常在 DeepSeek Harness 里用 |
-| **独立 Hub** `standalone/server.mjs` | ❌ | 存储 / 搜索 / 当前焦点 / HTTP API / MCP（**无**自动捕获与提示注入） | Windows、Linux、服务器、不想装 DSH |
+### 方式 A：装进 DeepSeek Harness（推荐）
 
-两者读写**同一份** store（默认 `~/.dsh/shared-memory/`），并写同一份 `runtime.json`，所以 MCP 桥、Cursor、Codex、WorkBuddy 的配置完全不用改。
-
-> ⚠️ 同一个 store 目录**只能运行其中一个**（插件或 Hub），不要同时跑——单写者假设会被破坏。
-
-### 让其他 AI「打开即用」
+前置：DeepSeek Harness Desktop、Node.js ≥ 18。
 
 ```bash
-cd shared-memory
-npm run install-apps   # 自动检测 Cursor / Claude Desktop / ChatGPT(Codex) / Claude Code / WorkBuddy(MCP+skill) 并写入配置
-npm run autostart      # 可选：登录 macOS 时自动打开 DSH，记忆服务随之常驻
+git clone https://github.com/shadyyoung/dsh-shared-memory.git
 ```
 
-- `install-apps` 会备份原配置再写入 `shared-memory` MCP 条目；装好新 AI 应用后重跑一次即可。
-- **已经在运行的应用需要 `Cmd+Q` 完全退出再打开一次**（应用不会热加载 MCP 配置，这是应用自身限制）。
-- `npm run autostart:uninstall` 可移除登录项启动器。
+在 DSH 里用 `plugin_manager` 安装 bundle（绝对路径）：
 
-## 快速开始（独立 Hub，跨平台）
+```text
+plugin_manager: install_bundle  target=/绝对路径/dsh-shared-memory
+```
 
-要求：Node.js ≥ 18，无其他依赖。
+确认工具已注册：
+
+```text
+cordis_inspect_query: Tool.listTools   # 应看到 memory_remember / memory_search / …
+```
+
+> [!TIP]
+> 修改插件源码后必须**重启 Harness** 才会生效（HMR 注册的 schema 可能与真实环境不一致），不要只靠热重载。
+
+### 方式 B：让其他 AI 应用「打开即用」
+
+```bash
+cd dsh-shared-memory
+npm run install-apps    # 自动检测并写入 Cursor / Claude Desktop / Codex / Claude Code / WorkBuddy(MCP+skill)
+npm run autostart       # 可选：登录 macOS 自动打开 DSH，服务常驻
+npm run doctor          # 逐项检查服务、MCP 桥握手、各应用配置
+```
+
+- `install-apps` 会**先备份**再写配置；新装 AI 应用后重跑一次即可。
+- 已在运行的应用需要 **`Cmd+Q` 完全退出再打开**才会加载 MCP（应用自身限制）。
+- `npm run autostart:uninstall` 可移除登录项。
+
+### 方式 C：独立 Hub（不依赖 DSH，跨平台）
 
 ```bash
 git clone https://github.com/shadyyoung/dsh-shared-memory.git
 cd dsh-shared-memory
-node standalone/server.mjs            # http://127.0.0.1:7400/dsh-memory
-# 或指定端口/地址/存储目录
-node standalone/server.mjs --port 7400 --host 127.0.0.1 --store ~/.dsh/shared-memory
+node standalone/server.mjs                       # http://127.0.0.1:7400/dsh-memory
+node standalone/server.mjs --port 7400 --store ~/.dsh/shared-memory
 ```
 
-启动后：
+独立 Hub 提供存储 / 检索 / HTTP / MCP，但**没有**自动捕获与提示注入。
 
-- HTTP：`http://127.0.0.1:7400/dsh-memory`（`/health`、`/api/*` 同契约，见 [docs/API.md](docs/API.md)）
-- MCP：`node ~/.dsh/shared-memory/mcp-server.mjs`（Hub 启动时会把桥复制到 store 目录并写 `runtime.json`）
-- 数据：`~/.dsh/shared-memory/`
+## 接入矩阵
 
-## 安装
+| 应用 | 接入方式 | 读写 | 说明 |
+|---|---|---|---|
+| DeepSeek Harness | 内置插件 | ✅ | 自动捕获 + 注入 + 6 个工具 |
+| Cursor | MCP stdio | ✅ | `~/.cursor/mcp.json` |
+| Claude Desktop | MCP stdio | ✅ | `claude_desktop_config.json` |
+| Claude Code | MCP stdio | ✅ | `~/.claude.json` |
+| ChatGPT 桌面（Codex） | MCP stdio | ✅ | `~/.codex/config.toml` |
+| WorkBuddy | MCP stdio + skill | ✅ | `~/.workbuddy/mcp.json`；需在界面信任一次本地 MCP |
+| 任意脚本 / 浏览器 | HTTP | ✅ | `/dsh-memory/api/*` |
+| ChatGPT 网页 / 纯聊天 | ❌ | — | 只支持远程 Connector，无法读本地 MCP |
 
-前置：DeepSeek Harness Desktop（含 `plugin_manager` / Cordis 插件体系）、Node.js ≥ 18。
+## 工具
 
-1. 克隆本仓库到任意目录：
-   ```bash
-   git clone https://github.com/shadyyoung/dsh-shared-memory.git
-   ```
-2. 用绝对路径安装 bundle（Harness 的 `plugin_manager` 工具或设置页）：
-   ```
-   plugin_manager: install_bundle  target=/绝对路径/dsh-shared-memory
-   ```
-   安装后用 `cordis_inspect_query` 的 `Tool.listTools` 应能看到 `memory_remember` / `memory_search` / `memory_forget` / `memory_current`。
-3. 其他 AI 应用接入：见 [docs/CONNECT-APPS.md](docs/CONNECT-APPS.md)（MCP 桥路径是 `~/.dsh/shared-memory/mcp-server.mjs`，由插件激活时自动复制）。
-4. 可选：把 `skills/shared-memory/SKILL.md` 复制到支持 skills 的 Agent，例如 WorkBuddy：
-   ```bash
-   mkdir -p ~/.workbuddy/skills/shared-memory
-   cp skills/shared-memory/SKILL.md ~/.workbuddy/skills/shared-memory/
-   ```
+**DSH 模型工具（6 个）**：`memory_remember` · `memory_search` · `memory_forget` · `memory_update` · `memory_restore` · `memory_current`
 
-## 兼容性
+**MCP 工具（7 个）**：上述 6 个（`memory_restore` 也可用）+ `memory_digest` · `memory_status`
 
-- **独立 Hub**：macOS / Linux / Windows + Node.js ≥ 18；CI 三平台矩阵（`ubuntu-latest` / `windows-latest` / `macos-latest`）实测。
-- **DSH 插件**：DeepSeek Harness Desktop（`desktop` profile，插件 API 0.2.x），随 DSH 支持的平台走；插件本身无 npm 依赖。
-- 已验证接入：DeepSeek Harness 所有会话（读写）、WorkBuddy（读写）、Cursor（读写）、ChatGPT 桌面版 Codex（读写）。
-- 未支持：ChatGPT 纯聊天窗口 / 网页版（只支持远程 Connector）。
-
-## 能力
-
-| 能力 | 说明 |
+| 工具 | 作用 |
 |---|---|
-| 自动捕获用户消息 | 监听 `session/event` 的 `user/message` 写成**短期原话缓存**（默认 30 天过期，跳过子代理与合成消息）；长期记忆只由模型主动 `memory_remember` 写入 |
-| 当前焦点 | 用户一说新的实质任务就自动更新（过滤“继续/再来一次”这类短句），也可由模型/任意应用显式设置 |
-| 会话动态 | 每条根会话的最近用户消息、最近助手回复、消息数、目录、标题，跨会话可见 |
-| 系统提示注入 | 每个模型请求前注入 `## 共享记忆` 摘要（≤1200 字符，`<memory-data>` 围栏 + 注入过滤），并用当前话题**按 BM25 相关性**挑出「相关记忆」一起注入 |
-| 模型工具 | `memory_remember` / `memory_search` / `memory_forget` / `memory_update` / `memory_restore` / `memory_current` |
-| 查看编辑 UI | `/dsh-memory/ui`：搜索高亮、相关性/最新排序、编辑、回收站/恢复/清空、编辑历史、使用次数、**备份/恢复**、导出 JSONL |
-| 自动备份 | 默认每 24 小时把全量数据 gzip 快照到 `~/.dsh/shared-memory-backups/`（保留 14 份），UI 可手动备份/一键恢复 |
-| 自动抽取 | 抓取用户消息里的长期事实（规则模式默认、免费；可切 `llm` 用模型抽取），先进「待确认」收件箱，UI 一键接受/编辑/拒绝 |
-| 导入历史 | 支持 ChatGPT / Claude 导出的 `conversations.json`、jsonl、txt/md，导入为原话并自动生成候选记忆 |
-| PII 脱敏 | 写入前识别 `sk-*`、`ghp_*`、`AKIA*`、Bearer、`password=`、身份证号等，默认替换为 `[已脱敏]` |
-| 接入自检 | `npm run doctor`（或 `node scripts/doctor.mjs`）逐项检查 DSH 服务 / MCP 桥 / Cursor / Codex / Claude Desktop / WorkBuddy |
-| 检索 | **BM25 倒排索引**（中文 bigram + 英文词），相关性排序，标签参与索引；支持 `sort=relevance|newest` |
-| HTTP API | `http://127.0.0.1:<端口>/dsh-memory`（端口随 Harness 启动变化，见 `runtime.json`） |
-| MCP 桥 | `~/.dsh/shared-memory/mcp-server.mjs`，零依赖 stdio MCP 服务，供 Claude Desktop / Claude Code / Cursor / Codex 等接入 |
+| `memory_remember` | 写入长期记忆（note/profile/preference/goal/project/task），相同内容自动去重 |
+| `memory_search` | BM25 检索，`sort=relevance/newest`，可按 kind/tag/天数过滤 |
+| `memory_forget` | 默认软删除到回收站；`purge: true` 彻底删除 |
+| `memory_update` | 原地编辑，保留 id/创建时间，自动记录历史版本 |
+| `memory_restore` | 从回收站恢复 |
+| `memory_current` | 读写「当前焦点 + 下一步」，跨会话共享 |
+| `memory_digest` | 获取 Markdown 摘要，可直接放进上下文 |
+| `memory_status` | 健康检查（版本、存储目录、统计） |
 
-## 演示
+## HTTP API 摘要
 
-```text
-$ node ~/.dsh/shared-memory/mcp-server.mjs
-# MCP initialize → tools/call memory_status
-共享记忆服务运行中（dsh-shared-memory v1.1.0）
-地址：http://127.0.0.1:57545/dsh-memory（来源：runtime.json）
-存储目录：/Users/you/.dsh/shared-memory
-统计：34 条记忆 / 18 条原话 / 3 个会话 / 当前焦点：有
+完整契约见 [docs/API.md](docs/API.md)。前缀 `/dsh-memory`：
 
-# tools/call memory_search { "q": "插件" }
-查询“插件”：共 3 条，显示 3 条
-
-- [project · 12 分钟前] 共享记忆插件已开源到 GitHub…
-- [note · 1 小时前] 首次安装失败原因：output.schema 用了参数 DSL 的 required 写法…
-- [profile · 2 小时前] 用户偏好中文、希望所有 AI 共用一份记忆…
-```
-
-任何一端说「记住：…」或写入一条记忆，其余会话的下一个 step 就会在系统提示摘要里看到它。
-
-## 查看与编辑（UI）
-
-浏览器打开服务地址下的 **`/ui`** 即可（DSH 插件和独立 Hub 都提供同一个页面）：
-
-```
-http://127.0.0.1:<端口>/dsh-memory/ui
-# 独立 Hub 默认：http://127.0.0.1:7400/dsh-memory/ui
-```
-
-- 统计信息、当前焦点编辑（focus + 下一步）
-- 记忆列表：搜索、按 kind 过滤、加载更多、编辑（正文/类型/标签）、删除
-- `message` 原话缓存**只读**（可移到回收站），避免破坏"原话"语义
-- **相关性摘要**：摘要里新增「相关记忆（与当前话题）」，用最近一条用户消息/当前焦点做 BM25 查询召回
-- **使用统计**：返回/注入过的记忆累计使用次数，参与相关性加权，UI 显示"用过 N 次"
-- **回收站**：支持一键清空（`POST /api/purge-trash`）
-- **备份与恢复**：快照包含记录/焦点/动态/使用统计；恢复前会自动把当前状态再备份一份，误操作也能回退
-- **回收站**：删除默认是软删除（`trashRetentionDays` 天后彻底清理），可一键恢复或彻底删除
-- **编辑历史**：每次编辑保留上一版，可查看并恢复任意历史版本
-- 一键导出 JSONL 备份
-- 设置过 `apiToken` 时，页面会提示输入 token（只存在浏览器 localStorage）
-
-界面是纯静态 HTML/CSS/JS，无构建步骤；同源访问 API，所以也不需要改 CORS。
-
-## 接入其他 AI 应用
-
-看生成好的说明：`~/.dsh/shared-memory/CONNECT-APPS.md`（源码版：[docs/CONNECT-APPS.md](docs/CONNECT-APPS.md)）。三步：
-
-1. 打开 DeepSeek Harness（HTTP API 跑在 Harness 进程里）。
-2. 在各应用里配置 MCP：命令 `/usr/local/bin/node`，参数 `~/.dsh/shared-memory/mcp-server.mjs`。
-3. 让应用调用 `memory_status` 验证；之后它就能看到并写入同一份记忆。
-
-## 存储格式
-
-```
-~/.dsh/shared-memory/
-├── memories.jsonl    # 一行一条记忆（唯一写者是 Harness 进程）
-├── focus.json        # 当前焦点 + nextSteps
-├── activity.json     # 每个根会话的最近动态
-├── runtime.json      # 插件激活时写入的 API 地址/端口/token（其他应用据此发现服务）
-├── mcp-server.mjs    # MCP 桥（随插件版本更新）
-├── CONNECT-APPS.md   # 接入说明
-├── digest.md         # 人类可读快照（每隔几秒重写）
-├── README.md
-└── token             # 仅当 config.apiToken 非空
-```
-
-记忆记录：`{ id, kind, text, tags, source:{app,sessionId,cwd,title}, createdAt }`，`kind ∈ note/profile/preference/goal/project/task/message`。相同 `kind + text` 自动去重。
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/health` | 健康检查 + 统计 |
+| GET | `/api/digest?maxChars=` | Markdown 摘要 |
+| GET | `/api/search?q=&kind=&tag=&sort=` | 检索 |
+| GET | `/api/items?q=&kind=&deleted=1&includeDeleted=1` | 列表（含回收站） |
+| GET/POST | `/api/current` | 读 / 写当前焦点 |
+| POST | `/api/remember` | 写入记忆 |
+| POST | `/api/forget` | 软删除 / `purge` 彻底删除 |
+| POST | `/api/restore` · `/api/purge-trash` | 恢复 / 清空回收站 |
+| POST | `/api/update` | 编辑 |
+| GET/POST | `/api/candidates` · `/api/candidates/accept` 等 | 待确认候选 |
+| POST | `/api/import` | 导入 ChatGPT/Claude/jsonl/txt |
+| GET/POST | `/api/backups` · `/api/backup` · `/api/restore-backup` | 备份/恢复 |
+| GET | `/api/export` | 导出 JSONL |
+| GET | `/ui` | 浏览器界面 |
 
 ## 配置
 
-改 `~/.dsh/profiles/desktop/package.json` 里 bundle 的配置不会生效——本插件通过自己的 `cordis.patch.yml` 插入行并携带 config。要调参，修改本目录的 [cordis.patch.yml](cordis.patch.yml) 后重新安装/启用 bundle。
+插件配置在 [cordis.patch.yml](cordis.patch.yml)，改完重新安装/启用 bundle 生效。
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
 | `storeDir` | `~/.dsh/shared-memory` | 存储目录 |
-| `captureUserMessages` | `true` | 自动捕获根会话的用户消息（短期原话缓存，非长期记忆） |
-| `messageRetentionDays` | `30` | 原话缓存保留天数，0=永久；过期只删 message，不删主动记忆 |
-| `promptDigest` | `true` | 把共享记忆摘要注入系统提示 |
+| `captureUserMessages` | `true` | 自动捕获根会话用户消息（短期原话缓存） |
+| `messageRetentionDays` | `30` | 原话保留天数，0=永久；过期只删 message |
+| `maxStoredMessages` | `3000` | 原话条数上限 |
+| `promptDigest` | `true` | 是否注入系统提示 |
 | `maxDigestChars` | `1200` | 摘要注入上限 |
-| `maxStoredMessages` | `3000` | 原话缓存的条数上限（超出丢最旧） |
-| `maxActivitySessions` | `200` | 会话动态保留的会话数上限 |
+| `maxRelevantMemories` | `4` | 摘要里「相关记忆」条数，0=关闭 |
+| `autoFocusMinutes` | `90` | 自动焦点刷新间隔，0=关闭 |
+| `trashRetentionDays` | `30` | 回收站保留天数，0=永久 |
+| `maxRevisions` | `20` | 编辑历史版本数，0=不保留 |
+| `backupDir` | `~/.dsh/shared-memory-backups` | 备份目录（在 store 之外，可指到 iCloud/Dropbox） |
+| `backupKeep` | `14` | 保留备份数 |
+| `autoBackupHours` | `24` | 自动备份间隔，0=关闭 |
+| `autoExtract` | `rules` | `off` / `rules`（免费）/ `llm`（模型抽取） |
+| `extractModel` | 空 | 模型抽取使用的 provider/model，空=默认模型 |
+| `maxExtractPerDay` | `30` | 每日模型抽取次数上限（成本闸门） |
+| `piiPolicy` | `redact` | `off` / `warn` / `redact` |
 | `apiEnabled` | `true` | 是否注册 HTTP 路由 |
 | `apiPath` | `/dsh-memory` | 路由前缀 |
 | `apiToken` | `""` | 非空则要求 `Authorization: Bearer <token>` |
-| `autoFocusMinutes` | `90` | 自动焦点的过期/刷新间隔，0 关闭自动焦点 |
-| `writeHumanDigest` | `true` | 是否写 `digest.md` |
-| `trashRetentionDays` | `30` | 回收站保留天数，0=永久保留（需手动彻底删除） |
-| `maxRevisions` | `20` | 每条记忆保留的历史版本数，0=不保留 |
-| `maxRelevantMemories` | `4` | 摘要里「相关记忆」条数，0=关闭 |
-| `backupDir` | `~/.dsh/shared-memory-backups` | 备份目录（默认在存储目录之外，删库也不会丢；可指到 iCloud/Dropbox） |
-| `backupKeep` | `14` | 保留最近 N 份备份，自动清理更旧的 |
-| `autoBackupHours` | `24` | 自动备份间隔（小时），0=关闭自动备份 |
-| `autoExtract` | `rules` | 自动抽取：`off` / `rules`（免费规则）/ `llm`（模型抽取） |
-| `extractModel` | 空 | 模型抽取用的 provider/model；空=用默认模型（可指定便宜模型省成本） |
-| `maxExtractPerDay` | `30` | 每日模型抽取次数上限（成本闸门） |
-| `piiPolicy` | `redact` | `off` 不处理 / `warn` 只标记 / `redact` 写入前脱敏 |
 
-## 验证
+## 架构
+
+<p align="center">
+  <img src="docs/assets/architecture.svg" alt="架构图：应用 → 插件 → 本地存储/备份" width="100%">
+</p>
+
+数据流：`session/event` → 捕获/抽取 → `memories.jsonl`（+ 索引）→ 摘要注入 / 工具 / HTTP → 其他应用。
+备份目录独立于 store，默认 24h 自动快照、保留 14 份，恢复前还会再存一份 `before-restore`。
+细节见 [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)。
+
+## 测试与 CI
 
 ```bash
-# 1. 服务健康（端口从 ~/.dsh/shared-memory/runtime.json 读取）
-curl -s "$(node -e "console.log(require(process.env.HOME+'/.dsh/shared-memory/runtime.json').apiBase)")/health"
-
-# 2. 本地单元/集成测试（不依赖正在运行的 Harness）
-node test/host-smoke.mjs       # 工具、捕获、提示摘要、HTTP API、鉴权
-node test/mcp-smoke.mjs        # MCP 协议 35 项断言（自带 mock 服务）
-node test/standalone-smoke.mjs # 独立 Hub + MCP 桥端到端（无需 Harness）
+node test/host-smoke.mjs        # 插件 + HTTP + UI 半集成测试
+node test/mcp-smoke.mjs         # MCP 协议冒烟（36 项断言）
+node test/standalone-smoke.mjs  # 独立 Hub + 桥端到端
+node test/search-bench.mjs      # 10k 条 BM25 索引/查询基准
+npm run doctor                  # 各应用接入自检
 ```
 
-实测结果（2026-10-26）：两套测试全部通过；运行中的 Harness 上 HTTP `/health` 正常，MCP 桥 `memory_status` / `memory_search` / `memory_current` 可读写同一份数据，系统提示已注入共享记忆摘要。
+CI：GitHub Actions 三平台矩阵（`ubuntu-latest` / `macos-latest` / `windows-latest` × Node 20/22），全部通过。
 
-## 已知失败记录（首次安装）
+## 仓库结构
 
-**现象**：`plugin_manager install_bundle` 返回 `application: failed`，诊断：
-
+```text
+shared-memory/
+├── index.js                    # Host 插件：存储/捕获/抽取/注入/工具/HTTP/UI
+├── cordis.patch.yml            # bundle 声明与默认配置
+├── standalone/server.mjs       # 独立 Hub（无 DSH 依赖）
+├── ui/index.html               # 浏览器 UI（单文件）
+├── mcp/server.mjs              # 零依赖 MCP stdio 桥
+├── skills/shared-memory/       # Agent Skill（WorkBuddy 等）
+├── scripts/
+│   ├── install-apps.mjs        # 一键写入各应用 MCP 配置
+│   ├── autostart.mjs           # macOS 登录项
+│   └── doctor.mjs              # 接入自检
+├── docs/
+│   ├── API.md                  # HTTP / 存储 / MCP 契约
+│   ├── HOW-IT-WORKS.md         # 工作原理
+│   ├── CONNECT-APPS.md         # 应用接入
+│   └── assets/                 # banner / 架构图 / UI 截图
+├── test/                       # host / mcp / standalone / bench
+├── .github/workflows/ci.yml
+└── CHANGELOG.md
 ```
-JsonSchemaError: unsupported JSON schema:
-  schema.properties.item.properties.id.required is not supported on type "string"
-  …
-```
 
-**原因**：`ctx.tools.register()` 的 `output.schema` 是**严格 JSON Schema 子集**，不是参数 DSL。首版把参数的写法（属性级 `required: true`）用在了 output 上；该子集要求 `required` 只能是对象级字符串数组，且不能出现在 string/number/array 等类型上。
+## FAQ
 
-**修复**：四个工具的 output schema 改为标准 JSON Schema（对象级 `required: [...]` + `properties`，可空焦点用 `oneOf: [object, null]`）；随后 `set_bundle(false)` → `set_bundle(true)` 重新激活，返回 `application: applied`。
+<details>
+<summary><b>为什么其他应用改了配置必须重启？</b></summary>
 
-同期修复的另外两个问题：
+MCP 配置只在应用启动时读取，应用没有热加载机制。`Cmd+Q` 完全退出（不是关窗口）再打开即可。
+</details>
 
-1. `forget()` 在写队列里再次入队导致自锁（删除记忆会永久挂起）——改为直接 `await #rewriteMemories()`。
-2. 自动焦点会被“继续 / 再来一次”这类短句覆盖——新增 `isSubstantiveTask()` 过滤（≥8 字符、非寒暄/续跑短句）。该启发式改动需重启 Harness（或重新启用 bundle）后才在新进程里生效。
+<details>
+<summary><b>原话会永久保存吗？</b></summary>
 
-## 限制与说明
+不会。原话默认 30 天过期（`messageRetentionDays`），长期记忆（profile/preference/project 等）永久保留，直到你删除。想要永久记住某件事，直接说「记住：…」。
+</details>
 
-- 没有独立的 Web UI 面板：记忆的查看/编辑通过工具、HTTP API、`digest.md`，或直接看 `memories.jsonl`。
-- HTTP 服务依附 Harness 进程：Harness 未运行时，MCP 桥会返回“服务未运行”的可读错误；启动 Harness 后自动恢复，不需要重启其他应用。
-- 默认只监听本机；需要跨机器访问时请自行加 `apiToken` 并处理端口暴露。
-- 记忆是明文 JSONL（`~/.dsh/shared-memory/`），包含用户消息原文；不希望落盘的场景可用 `captureUserMessages: false`。
+<details>
+<summary><b>DSH 关了，其他应用还能用吗？</b></summary>
 
-## 变更记录
+不能，服务宿主是 DSH。装 `npm run autostart` 让登录时自动启动；或改用独立 Hub 常驻。
+</details>
 
-见 [CHANGELOG.md](CHANGELOG.md)。
+<details>
+<summary><b>数据和隐私？</b></summary>
+
+全部存在本机 `~/.dsh/shared-memory/`，默认只监听回环地址；可设 `apiToken`；写入前自动脱敏常见密钥/身份证号（`piiPolicy`）。
+</details>
+
+## License
+
+[MIT](LICENSE) · 文档与截图随仓库一起开源。

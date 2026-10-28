@@ -1,122 +1,106 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="Shared Memory architecture">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-label="Shared Memory architecture">
   <defs>
+    <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#64748B"/>
-    </marker>
-    <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#6C5CE7"/>
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
     </marker>
     <style>
-      .box { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; rx: 12; }
-      .box-accent { fill: #F4F2FF; stroke: #6C5CE7; stroke-width: 2; rx: 12; }
-      .box-store { fill: #F0FDF4; stroke: #16A34A; stroke-width: 2; rx: 12; }
-      .grp { fill: #F8FAFC; stroke: #E2E8F0; stroke-width: 1.5; rx: 16; }
-      .t { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #0F172A; }
-      .tt { font-size: 17px; font-weight: 700; }
-      .ts { font-size: 13px; fill: #475569; }
-      .tm { font-size: 12.5px; fill: #475569; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-      .lbl { font-size: 12px; fill: #64748B; }
-      .line { stroke: #64748B; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
-      .line-accent { stroke: #6C5CE7; stroke-width: 2; fill: none; marker-end: url(#arrow-accent); }
-      .title { font-size: 26px; font-weight: 800; }
-      .sub { font-size: 13px; fill: #64748B; }
+      .box{fill:#ffffff;stroke:#e2e8f0;stroke-width:1.5}
+      .box-dark{fill:#0f172a;stroke:#1e293b;stroke-width:1.5}
+      .t{font-family:'PingFang SC','Hiragino Sans GB',system-ui,-apple-system,'Segoe UI',sans-serif}
+      .h{font-size:15px;font-weight:700;fill:#0f172a}
+      .s{font-size:12.5px;fill:#64748b}
+      .hl{font-size:15px;font-weight:700;fill:#ffffff}
+      .hs{font-size:12.5px;fill:#94a3b8}
+      .lbl{font-size:11.5px;fill:#94a3b8}
     </style>
   </defs>
 
-  <rect width="1200" height="720" fill="#FFFFFF"/>
-  <text class="t title" x="48" y="58">Shared Memory · 共享记忆</text>
-  <text class="t sub" x="48" y="84">One memory store for every DeepSeek Harness session and every other AI app — via local HTTP + MCP.</text>
+  <rect width="1200" height="640" fill="#f8fafc"/>
+  <text class="t" x="40" y="48" font-size="22" font-weight="800" fill="#0f172a">共享记忆 · 架构总览</text>
+  <text class="t" x="40" y="74" font-size="13" fill="#64748b">一个本地优先的记忆层：DSH 插件负责读写与注入，MCP 桥 / HTTP 让其他 AI 应用接入，备份目录兜底数据安全。</text>
+  <rect x="40" y="88" width="1120" height="3" rx="1.5" fill="url(#hdr)"/>
 
-  <!-- Other AI apps -->
-  <rect class="grp" x="40" y="120" width="230" height="430"/>
-  <text class="t ts" x="60" y="150" font-weight="700">其他 AI 应用 · Other AI apps</text>
+  <!-- Apps -->
+  <g class="t">
+    <text class="lbl" x="60" y="130">AI 应用</text>
+    <rect class="box" x="40" y="146" width="200" height="64" rx="12"/>
+    <text class="h" x="60" y="174">DeepSeek Harness</text><text class="s" x="60" y="194">插件 · 自动捕获 + 注入</text>
 
-  <rect class="box" x="60" y="176" width="190" height="62"/>
-  <text class="t tt" x="78" y="202">WorkBuddy</text>
-  <text class="t ts" x="78" y="222">skill + Bash/curl</text>
+    <rect class="box" x="40" y="226" width="200" height="64" rx="12"/>
+    <text class="h" x="60" y="254">Cursor / Claude / Codex</text><text class="s" x="60" y="274">MCP stdio 桥</text>
 
-  <rect class="box" x="60" y="256" width="190" height="62"/>
-  <text class="t tt" x="78" y="282">Cursor</text>
-  <text class="t ts" x="78" y="302">MCP stdio client</text>
+    <rect class="box" x="40" y="306" width="200" height="64" rx="12"/>
+    <text class="h" x="60" y="334">WorkBuddy</text><text class="s" x="60" y="354">MCP · 信任后直连</text>
 
-  <rect class="box" x="60" y="336" width="190" height="62"/>
-  <text class="t tt" x="78" y="362">ChatGPT Codex</text>
-  <text class="t ts" x="78" y="382">MCP stdio client</text>
+    <rect class="box" x="40" y="386" width="200" height="64" rx="12"/>
+    <text class="h" x="60" y="414">任意脚本 / 浏览器</text><text class="s" x="60" y="434">HTTP API · /dsh-memory</text>
+  </g>
 
-  <rect class="box" x="60" y="416" width="190" height="62"/>
-  <text class="t tt" x="78" y="442">Claude Desktop / Code</text>
-  <text class="t ts" x="78" y="462">MCP stdio client</text>
+  <!-- DSH core -->
+  <g class="t">
+    <rect class="box-dark" x="330" y="120" width="470" height="430" rx="18"/>
+    <text class="hl" x="360" y="156">DeepSeek Harness · SharedMemoryStore</text>
+    <text class="hs" x="360" y="178">单写者 · 串行写链 · 原子落盘</text>
 
-  <text class="t lbl" x="60" y="512">纯 ChatGPT 聊天 / 网页：不支持</text>
-  <text class="t lbl" x="60" y="530">（仅支持远程 Connector）</text>
+    <rect x="360" y="198" width="200" height="66" rx="10" fill="#1e293b" stroke="#334155"/>
+    <text class="hl" x="380" y="224">会话捕获</text><text class="hs" x="380" y="244">user/message · 30 天 / 3000 条</text>
 
-  <!-- DSH process -->
-  <rect class="grp" x="360" y="120" width="520" height="560"/>
-  <text class="t ts" x="384" y="150" font-weight="700">DeepSeek Harness 进程 · single writer</text>
+    <rect x="570" y="198" width="200" height="66" rx="10" fill="#1e293b" stroke="#334155"/>
+    <text class="hl" x="590" y="224">自动抽取</text><text class="hs" x="590" y="244">rules / llm → 待确认</text>
 
-  <rect class="box-accent" x="384" y="176" width="470" height="120"/>
-  <text class="t tt" x="406" y="206">共享记忆插件 · @local/shared-memory</text>
-  <text class="t ts" x="406" y="230">SharedMemoryStore · 内存缓存 + 串行写队列</text>
-  <text class="t ts" x="406" y="252">去重 / 保留期 / 当前焦点 / 检索</text>
-  <text class="t tm" x="406" y="276">memories.jsonl · focus.json · activity.json</text>
+    <rect x="360" y="282" width="200" height="66" rx="10" fill="#1e293b" stroke="#334155"/>
+    <text class="hl" x="380" y="308">BM25 索引</text><text class="hs" x="380" y="328">bigram + 英文词 + 标签</text>
 
-  <rect class="box" x="384" y="326" width="220" height="86"/>
-  <text class="t tt" x="404" y="352">HTTP API</text>
-  <text class="t tm" x="404" y="376">GET/POST /dsh-memory/api/*</text>
-  <text class="t ts" x="404" y="398">health · digest · search · current</text>
+    <rect x="570" y="282" width="200" height="66" rx="10" fill="#1e293b" stroke="#334155"/>
+    <text class="hl" x="590" y="308">提示注入</text><text class="hs" x="590" y="328">摘要 ≤1200 字 + 相关记忆</text>
 
-  <rect class="box" x="634" y="326" width="220" height="86"/>
-  <text class="t tt" x="654" y="352">MCP 桥</text>
-  <text class="t tm" x="654" y="376">mcp-server.mjs (stdio)</text>
-  <text class="t ts" x="654" y="398">自动发现 runtime.json 端口</text>
+    <rect x="360" y="366" width="200" height="66" rx="10" fill="#1e293b" stroke="#334155"/>
+    <text class="hl" x="380" y="392">memory_* 工具</text><text class="hs" x="380" y="412">remember / search / update …</text>
 
-  <rect class="box" x="384" y="442" width="220" height="86"/>
-  <text class="t tt" x="404" y="468">系统提示注入</text>
-  <text class="t ts" x="404" y="490">systemPrompt.section order 700</text>
-  <text class="t ts" x="404" y="512">每个 step 重新生成，≤1200 字</text>
+    <rect x="570" y="366" width="200" height="66" rx="10" fill="#1e293b" stroke="#334155"/>
+    <text class="hl" x="590" y="392">安全写入</text><text class="hs" x="590" y="412">PII 脱敏 · 注入过滤</text>
 
-  <rect class="box" x="634" y="442" width="220" height="86"/>
-  <text class="t tt" x="654" y="468">模型工具</text>
-  <text class="t tm" x="654" y="490">memory_remember / search</text>
-  <text class="t tm" x="654" y="512">forget / current · digest · status</text>
+    <rect x="360" y="450" width="410" height="66" rx="10" fill="#1e293b" stroke="#334155"/>
+    <text class="hl" x="380" y="476">HTTP API + UI</text><text class="hs" x="380" y="496">/health · /api/* · /ui · runtime.json</text>
+  </g>
 
-  <rect class="box" x="384" y="560" width="470" height="72"/>
-  <text class="t tt" x="406" y="588">会话事件捕获</text>
-  <text class="t ts" x="406" y="610">ctx.on('session/event') → user/message（跳过子代理/合成消息）</text>
+  <!-- arrows apps -> core -->
+  <g stroke="#94a3b8" stroke-width="1.8" fill="none" marker-end="url(#arrow)">
+    <line x1="240" y1="178" x2="324" y2="178"/>
+    <line x1="240" y1="258" x2="324" y2="258"/>
+    <line x1="240" y1="338" x2="324" y2="338"/>
+    <line x1="240" y1="418" x2="324" y2="418"/>
+  </g>
 
-  <text class="t lbl" x="384" y="660">提示注入：每个模型请求前把“关于用户 / 当前焦点 / 最近动态 / 最近记忆”重新喂给模型</text>
+  <!-- Store -->
+  <g class="t">
+    <text class="lbl" x="850" y="130">本地存储</text>
+    <rect class="box" x="840" y="146" width="320" height="140" rx="12"/>
+    <text class="h" x="862" y="176">~/.dsh/shared-memory/</text>
+    <text class="s" x="862" y="200">memories.jsonl · focus.json</text>
+    <text class="s" x="862" y="222">activity.json · usage.json</text>
+    <text class="s" x="862" y="244">candidates.json · runtime.json</text>
+    <text class="s" x="862" y="266">digest.md · mcp-server.mjs</text>
 
-  <!-- Storage -->
-  <rect class="box-store" x="930" y="176" width="230" height="190"/>
-  <text class="t tt" x="952" y="206">~/.dsh/shared-memory/</text>
-  <text class="t tm" x="952" y="234">memories.jsonl</text>
-  <text class="t ts" x="952" y="254">一行一条记忆（唯一写者）</text>
-  <text class="t tm" x="952" y="282">focus.json</text>
-  <text class="t ts" x="952" y="302">当前焦点 + nextSteps</text>
-  <text class="t tm" x="952" y="330">activity.json</text>
-  <text class="t ts" x="952" y="350">每会话最近动态</text>
+    <rect class="box" x="840" y="306" width="320" height="118" rx="12"/>
+    <text class="h" x="862" y="336">备份与恢复</text>
+    <text class="s" x="862" y="360">~/.dsh/shared-memory-backups/</text>
+    <text class="s" x="862" y="382">默认每 24h · 保留 14 份</text>
+    <text class="s" x="862" y="404">恢复前自动 before-restore 快照</text>
 
-  <rect class="box" x="930" y="392" width="230" height="120"/>
-  <text class="t tt" x="952" y="420">runtime.json</text>
-  <text class="t ts" x="952" y="442">apiBase / origin / token</text>
-  <text class="t ts" x="952" y="462">供 MCP 桥与其他应用发现服务</text>
-  <text class="t tm" x="952" y="490">digest.md · README.md</text>
+    <rect class="box" x="840" y="444" width="320" height="86" rx="12"/>
+    <text class="h" x="862" y="474">MCP 桥 / 独立 Hub</text>
+    <text class="s" x="862" y="498">mcp-server.mjs · standalone/server.mjs</text>
+    <text class="s" x="862" y="518">与 DSH 二选一，单写者</text>
+  </g>
 
-  <rect class="box" x="930" y="536" width="230" height="96"/>
-  <text class="t tt" x="952" y="564">两层记忆策略</text>
-  <text class="t ts" x="952" y="586">原话缓存：30 天过期</text>
-  <text class="t ts" x="952" y="606">关键记忆：模型判断后永久</text>
-
-  <!-- arrows -->
-  <path class="line" d="M250 207 L384 226"/>
-  <path class="line" d="M250 287 L384 300" marker-end="url(#arrow)"/>
-  <path class="line" d="M250 367 L384 367"/>
-  <path class="line" d="M250 447 L384 400"/>
-  <path class="line-accent" d="M854 369 L930 300"/>
-  <path class="line-accent" d="M854 485 L930 340"/>
-  <path class="line-accent" d="M619 560 C 660 560, 660 300, 619 296"/>
-  <path class="line-accent" d="M619 296 L384 296"/>
-  <path class="line" d="M854 230 L930 230"/>
-
-  <text class="t lbl" x="380" y="130"> </text>
+  <g stroke="#94a3b8" stroke-width="1.8" fill="none" marker-end="url(#arrow)">
+    <line x1="804" y1="200" x2="836" y2="200"/>
+    <line x1="804" y1="470" x2="836" y2="470"/>
+  </g>
+  <text class="t lbl" x="810" y="226" font-size="10.5">读写</text>
+  <text class="t lbl" x="806" y="498" font-size="10.5">启动/连接</text>
 </svg>
