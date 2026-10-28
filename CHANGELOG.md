@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.6.2 — 2026-10-28
+
+### 新增 / Added
+
+- **WorkBuddy 改用 MCP 接入**：`install-apps` 现在同时写入 `~/.workbuddy/mcp.json` 的 `shared-memory` 条目，WorkBuddy 打开即拥有 7 个记忆工具（skill 仍保留作备份）。
+- 已在本机写入并验证（原 `mcp.json` 自动备份）。
+
 ## v1.6.1 — 2026-10-28
 
 ### 新增 / Added

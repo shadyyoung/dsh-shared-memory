@@ -12,7 +12,7 @@
 - 形态：**DeepSeek Harness Host 插件（bundle）** + **零依赖 MCP stdio 桥** + **可复用 Agent Skill**
 - 存储位置：`~/.dsh/shared-memory/`
 - 包名 / 行 id：`@local/shared-memory` / `shared-memory`
-- 版本：1.6.1 · License：MIT
+- 版本：1.6.2 · License：MIT
 
 > 原名 **共享记忆**，自 v1.0.0 起中文名改为 **AI 跨平台记忆增强 1.0**；**英文名保持 Shared Memory 不变**。内部标识（包名、skill id、存储目录）保持不变，不影响已有安装与数据。
 
@@ -95,7 +95,7 @@ flowchart LR
 
 ```bash
 cd shared-memory
-npm run install-apps   # 自动检测 Cursor / Claude Desktop / ChatGPT(Codex) / Claude Code / WorkBuddy 并写入 MCP 配置
+npm run install-apps   # 自动检测 Cursor / Claude Desktop / ChatGPT(Codex) / Claude Code / WorkBuddy(MCP+skill) 并写入配置
 npm run autostart      # 可选：登录 macOS 时自动打开 DSH，记忆服务随之常驻
 ```
 

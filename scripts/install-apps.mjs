@@ -97,6 +97,7 @@ function main() {
   installTomlConfig('Codex / ChatGPT 桌面', path.join(HOME, '.codex', 'config.toml'))
   installJsonConfig('Claude Code', path.join(HOME, '.claude.json'), { create: false })
   installJsonConfig('Windsurf', path.join(HOME, '.codeium', 'windsurf', 'mcp_config.json'), { create: appInstalled('Windsurf') })
+  installJsonConfig('WorkBuddy (MCP)', path.join(HOME, '.workbuddy', 'mcp.json'), { create: appInstalled('WorkBuddy') })
   installWorkBuddy()
 
   console.log('\n共享记忆 · 应用接入安装\n')

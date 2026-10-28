@@ -18,7 +18,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 
 const SERVER_NAME = 'dsh-shared-memory';
-const SERVER_VERSION = '1.6.1';
+const SERVER_VERSION = '1.6.2';
 const DEFAULT_API_BASE = 'http://127.0.0.1:62877/dsh-memory';
 const SUPPORTED_PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18'];
 const DEFAULT_PROTOCOL = '2024-11-05';
