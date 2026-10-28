@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/shadyyoung/dsh-shared-memory/releases">
-    <img src="docs/assets/banner.svg" alt="AI 크로스 플랫폼 기억 강화 · Shared Memory" width="100%">
+    <img src="docs/assets/banner.intl.svg" alt="AI 크로스 플랫폼 기억 강화 · Shared Memory" width="100%">
   </a>
 </p>
 
