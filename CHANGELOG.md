@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6.1 — 2026-10-28
+
+### 新增 / Added
+
+- **`npm run install-apps`**：自动检测已安装的 Cursor / Claude Desktop / ChatGPT(Codex) / Claude Code / Windsurf / WorkBuddy，备份后写入 `shared-memory` MCP 配置，新装应用重跑一次即可「打开即用」。
+- **`npm run autostart`**：安装 macOS LaunchAgent，登录时自动打开 DeepSeek Harness，让记忆服务常驻；`autostart:uninstall` 可移除。
+- 说明：已在运行的应用必须 `Cmd+Q` 重启一次才会加载 MCP（应用自身限制，无法热更新）。
+
 ## v1.6.0 — 2026-10-27
 
 ### 新增 / Added

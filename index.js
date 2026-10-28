@@ -25,7 +25,7 @@ export const name = 'shared-memory'
 export const inject = ['tools', 'systemPrompt', 'webServer']
 
 const PLUGIN_NAME = 'dsh-shared-memory'
-const VERSION = '1.6.0'
+const VERSION = '1.6.1'
 const DAY = 86400000
 /** A backup file name accepted by list/restore (path traversal guard). */
 const BACKUP_NAME = /^backup-[0-9A-Za-z._-]+\.json\.gz$/

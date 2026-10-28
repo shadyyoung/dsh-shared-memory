@@ -7,7 +7,7 @@ A **cross-session, cross-app, cross-platform memory layer** (packaged as a DeepS
 - Shape: **Harness Host plugin** + **zero-dependency MCP stdio bridge** + **reusable agent skill**
 - Storage: `~/.dsh/shared-memory/`
 - Package / loader row: `@local/shared-memory` / `shared-memory`
-- Version: 1.6.0 · License: MIT
+- Version: 1.6.1 · License: MIT
 
 > The Chinese name is now **AI 跨平台记忆增强 1.0**; the English name stays **Shared Memory**. Internal identifiers (package, skill id, store path) are unchanged for compatibility.
 
@@ -95,7 +95,16 @@ Both use the same store (`~/.dsh/shared-memory/` by default) and the same `runti
 
 > ⚠️ Run only one of them per store directory — they share the single-writer assumption.
 
-### Quick start (standalone hub, cross-platform)
+### Install into other AI apps
+
+```bash
+npm run install-apps   # detect Cursor / Claude Desktop / ChatGPT (Codex) / Claude Code / WorkBuddy and write MCP configs
+npm run autostart      # optional: open DSH at login so the memory service stays online
+```
+
+Running apps need one full `Cmd+Q` restart to pick up MCP config (app limitation). `npm run autostart:uninstall` removes the login item.
+
+## Quick start (standalone hub, cross-platform)
 
 Requires Node.js ≥ 18, nothing else.
 
