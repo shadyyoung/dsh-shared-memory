@@ -212,6 +212,7 @@ node standalone/server.mjs --port 7400 --store ~/.dsh/shared-memory
 
 ```bash
 node test/host-smoke.mjs        # 插件 + HTTP + UI 半集成测试
+node test/tool-output-contract.mjs  # 工具输出符合 DSH 的 lossless-JSON + 严格 schema 契约
 node test/mcp-smoke.mjs         # MCP 协议冒烟（36 项断言）
 node test/standalone-smoke.mjs  # 独立 Hub + 桥端到端
 node test/search-bench.mjs      # 10k 条 BM25 索引/查询基准

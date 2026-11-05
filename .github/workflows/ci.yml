@@ -24,6 +24,8 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Host plugin smoke
         run: node test/host-smoke.mjs
+      - name: Tool output contract
+        run: node test/tool-output-contract.mjs
       - name: MCP bridge smoke
         run: node test/mcp-smoke.mjs
       - name: Standalone hub smoke

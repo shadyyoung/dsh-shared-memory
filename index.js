@@ -25,7 +25,7 @@ export const name = 'shared-memory'
 export const inject = ['tools', 'systemPrompt', 'webServer']
 
 const PLUGIN_NAME = 'dsh-shared-memory'
-const VERSION = '1.6.2'
+const VERSION = '1.6.3'
 const DAY = 86400000
 /** A backup file name accepted by list/restore (path traversal guard). */
 const BACKUP_NAME = /^backup-[0-9A-Za-z._-]+\.json\.gz$/
@@ -1938,6 +1938,106 @@ const activityOutputSchema = {
   },
 }
 
+/**
+ * Copy one value into the host's lossless-JSON shape: `undefined`, functions
+ * and non-finite numbers have no JSON form, so they are dropped instead of
+ * poisoning the whole tool result.
+ */
+function losslessCopy(value) {
+  if (value === null) return null
+  if (typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  if (Array.isArray(value)) {
+    const out = []
+    for (const entry of value) {
+      const copy = losslessCopy(entry)
+      if (copy === undefined) return undefined
+      out.push(copy)
+    }
+    return out
+  }
+  if (!isPlainObject(value)) return undefined
+  const out = {}
+  for (const key of Object.keys(value)) {
+    const copy = losslessCopy(value[key])
+    if (copy !== undefined) out[key] = copy
+  }
+  return out
+}
+
+/**
+ * Project one tool value onto its declared output schema.
+ *
+ * The host snapshots every tool result as lossless JSON and then validates it
+ * against `tool.output.schema`: one `undefined` property anywhere makes the
+ * whole result "not lossless JSON", and `additionalProperties: false` rejects
+ * undeclared keys. Store records carry optional fields as `undefined` and a few
+ * store helpers return extra bookkeeping keys, so the raw value is projected to
+ * exactly what the schema declares.
+ */
+function projectToolOutput(schema, value) {
+  if (value === undefined) return undefined
+  if (Array.isArray(schema?.oneOf)) {
+    for (const branch of schema.oneOf) {
+      const projected = projectToolOutput(branch, value)
+      if (projected !== undefined) return projected
+    }
+    return losslessCopy(value)
+  }
+  if (schema === null || typeof schema !== 'object') return losslessCopy(value)
+  const type = schema.type
+  if (type === 'array') {
+    if (!Array.isArray(value)) return undefined
+    if (schema.items === undefined) return losslessCopy(value)
+    const items = []
+    for (const entry of value) {
+      const projected = projectToolOutput(schema.items, entry)
+      if (projected === undefined) return undefined
+      items.push(projected)
+    }
+    return items
+  }
+  if (type === 'object') {
+    if (!isPlainObject(value)) return undefined
+    const properties = isPlainObject(schema.properties) ? schema.properties : {}
+    const out = {}
+    for (const [key, child] of Object.entries(properties)) {
+      if (!Object.hasOwn(value, key)) continue
+      const projected = projectToolOutput(child, value[key])
+      if (projected !== undefined) out[key] = projected
+    }
+    if (schema.additionalProperties !== false) {
+      for (const key of Object.keys(value)) {
+        if (Object.hasOwn(properties, key)) continue
+        const projected = losslessCopy(value[key])
+        if (projected !== undefined) out[key] = projected
+      }
+    }
+    for (const key of Array.isArray(schema.required) ? schema.required : []) {
+      if (!Object.hasOwn(out, key)) return undefined
+    }
+    return out
+  }
+  if (type === 'string') return typeof value === 'string' ? value : undefined
+  if (type === 'boolean') return typeof value === 'boolean' ? value : undefined
+  if (type === 'number' || type === 'integer') return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  if (type === 'null') return value === null ? null : undefined
+  return losslessCopy(value)
+}
+
+/** Wrap one tool so its value reaches the host already conforming to `output.schema`. */
+function withProjectedOutput(definition) {
+  const execute = definition.execute
+  if (typeof execute !== 'function' || !isPlainObject(definition.output?.schema)) return definition
+  const schema = definition.output.schema
+  return {
+    ...definition,
+    async execute(args, exec) {
+      return projectToolOutput(schema, await execute.call(definition, args, exec))
+    },
+  }
+}
+
 /** Build the four model-facing tools bound to one store. */
 function createTools(store) {
   return [
@@ -2228,7 +2328,7 @@ export function apply(ctx, rawConfig) {
 
   // ---- Tools -------------------------------------------------------------
   for (const definition of createTools(store)) {
-    use(() => ctx.tools.register(definition))
+    use(() => ctx.tools.register(withProjectedOutput(definition)))
   }
 
   // ---- Prompt digest -----------------------------------------------------

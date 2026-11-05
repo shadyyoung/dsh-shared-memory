@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.6.3 — 2026-11-02
+
+### 修复 / Fixed
+
+- **工具输出不满足新版 DSH 的严格输出契约**：`memory_search` / `memory_current` 等工具报 `value is not lossless JSON`，实际后果是 DSH 里 6 个记忆工具全部不可用（HTTP API、UI、系统提示注入不受影响）。两个原因叠加：
+  - `normalizeRecord` / `normalizeActivity` 把可选字段显式写成 `undefined`（如 `updatedAt` / `deletedAt` / `title` / `lastUser`），而 DSH 先把工具值快照成 lossless JSON，任意一个 `undefined` 就让整个结果非法；
+  - `memory_search` 额外返回 `offset` / `limit`、`memory_forget` 额外返回 `mode`，而 `output.schema` 声明了 `additionalProperties: false`，未声明字段同样判为 invalid output。
+  - 修法：注册工具时按 `output.schema` 归一化工具值（`projectToolOutput` / `withProjectedOutput`），只保留 schema 声明且值是 lossless JSON 的字段。
+- 新增 `test/tool-output-contract.mjs`：复刻 DSH 的 lossless-JSON 快照 + 严格 schema 校验，覆盖全部 6 个工具（含 render 输出）。
+
 ## v1.6.2 — 2026-10-28
 
 ### 新增 / Added
