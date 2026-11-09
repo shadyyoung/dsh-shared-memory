@@ -83,7 +83,7 @@ cordis_inspect_query: Tool.listTools   # expect memory_remember / memory_search 
 ```bash
 cd dsh-shared-memory
 npm run install-apps    # detect + configure Cursor / Claude Desktop / Codex / Claude Code / WorkBuddy (MCP + skill)
-npm run autostart       # optional (macOS): open DSH at login so the service stays online
+npm run autostart       # optional: start at login (macOS LaunchAgent / Windows scheduled task / Linux systemd)
 npm run doctor          # verify service, MCP handshake and every app config
 ```
 

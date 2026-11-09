@@ -26,6 +26,8 @@ jobs:
         run: node test/host-smoke.mjs
       - name: Tool output contract
         run: node test/tool-output-contract.mjs
+      - name: Autostart plan (macOS / Windows / Linux)
+        run: node test/autostart.mjs
       - name: MCP bridge smoke
         run: node test/mcp-smoke.mjs
       - name: Standalone hub smoke

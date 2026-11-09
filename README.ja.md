@@ -90,7 +90,7 @@ cordis_inspect_query: Tool.listTools   # memory_remember / memory_search … が
 ```bash
 cd dsh-shared-memory
 npm run install-apps    # Cursor / Claude Desktop / Codex / Claude Code / WorkBuddy を検出して設定
-npm run autostart       # 任意 (macOS)：ログイン時に DSH を起動してサービスを常駐
+npm run autostart       # 任意：ログイン時に自動起動（macOS LaunchAgent / Windows タスクスケジューラ / Linux systemd）
 npm run doctor          # サービス・MCP ハンドシェイク・各アプリ設定を検証
 ```
 

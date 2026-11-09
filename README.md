@@ -104,13 +104,15 @@ cordis_inspect_query: Tool.listTools   # 应看到 memory_remember / memory_sear
 ```bash
 cd dsh-shared-memory
 npm run install-apps    # 自动检测并写入 Cursor / Claude Desktop / Codex / Claude Code / WorkBuddy(MCP+skill)
-npm run autostart       # 可选：登录 macOS 自动打开 DSH，服务常驻
+npm run autostart       # 可选：登录自启（macOS LaunchAgent / Windows 计划任务 / Linux systemd）
 npm run doctor          # 逐项检查服务、MCP 桥握手、各应用配置
 ```
 
 - `install-apps` 会**先备份**再写配置；新装 AI 应用后重跑一次即可。
 - 已在运行的应用需要 **`Cmd+Q` 完全退出再打开**才会加载 MCP（应用自身限制）。
-- `npm run autostart:uninstall` 可移除登录项。
+- `autostart` 默认启动 DSH（Linux 没有 DSH 桌面版，默认启动独立 Hub）；要改行为可传参：
+  `npm run autostart -- --mode hub --port 7400 --store ~/.dsh/shared-memory`，加 `--dry-run` 只打印文件与命令、不改系统。
+- `npm run autostart:uninstall` 可移除登录自启。
 
 ### 方式 C：独立 Hub（不依赖 DSH，跨平台）
 
@@ -145,7 +147,7 @@ node standalone/server.mjs --port 7400 --store ~/.dsh/shared-memory
 | 插件本体 / MCP 桥 / HTTP API / UI | ✅ | ✅ | ✅ |
 | 独立 Hub（`standalone/server.mjs`） | ✅ | ✅ | ✅ |
 | `npm run install-apps`（写入各应用 MCP 配置） | ✅ | ✅ | ✅ |
-| `npm run autostart`（登录自启） | ✅ LaunchAgent | ⏳ 待补（计划任务） | ⏳ 待补（systemd） |
+| `npm run autostart`（登录自启） | ✅ LaunchAgent | ✅ 计划任务（ONLOGON） | ✅ systemd 用户单元 |
 | CI 验证（Node 20/22 × 三平台） | ✅ | ✅ | ✅ |
 
 ## 工具
@@ -250,7 +252,7 @@ shared-memory/
 ├── skills/shared-memory/       # Agent Skill（WorkBuddy 等）
 ├── scripts/
 │   ├── install-apps.mjs        # 一键写入各应用 MCP 配置
-│   ├── autostart.mjs           # macOS 登录项
+│   ├── autostart.mjs           # 登录自启（macOS/Windows/Linux）
 │   └── doctor.mjs              # 接入自检
 ├── docs/
 │   ├── API.md                  # HTTP / 存储 / MCP 契约

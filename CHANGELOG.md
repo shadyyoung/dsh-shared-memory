@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.7.0 — 2026-11-09
+
+### 新增 / Added
+
+- **登录自启支持 Windows 与 Linux**：`npm run autostart` 现在按平台写入对应的启动后端——macOS LaunchAgent、Windows 计划任务（`ONLOGON`，经 `%LOCALAPPDATA%\dsh-shared-memory\autostart.cmd` 包装启动）、Linux systemd 用户单元（`~/.config/systemd/user/dsh-shared-memory.service`）。
+  - 两种模式：`--mode app`（默认，登录后启动 DSH；Linux 没有 DSH 桌面版，默认改走 hub）、`--mode hub`（运行独立 Hub，可配 `--port` / `--store`）。
+  - 新增 `--dry-run`：只打印将写入的文件与将执行的命令，不修改系统。
+  - 路径按**目标平台**生成（`path.win32` / `path.posix`），因此在任意平台都能预览或生成其他平台的计划。
+  - 新增 `test/autostart.mjs`：三平台启动计划的内容与命令断言，已纳入 CI。
+- README（5 种语言）更新自启说明与平台支持矩阵。
+
 ## v1.6.3 — 2026-11-02
 
 ### 修复 / Fixed
