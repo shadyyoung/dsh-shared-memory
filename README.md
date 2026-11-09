@@ -60,16 +60,20 @@
 ## 界面
 
 <p align="center">
-  <img src="docs/assets/ui.png" alt="Web UI：焦点、备份、记忆列表、待确认、回收站" width="100%">
+  <img src="docs/assets/ui.png" alt="Web UI 概览：焦点、规模、14 天趋势、热门标签、最常被用到的记忆" width="100%">
+  <br/>
+  <sub>浅色主题（深色主题见 <a href="docs/assets/ui-dark.png">ui-dark.png</a>，右上角一键切换）</sub>
 </p>
 
 浏览器打开 `/dsh-memory/ui`（地址随 DSH 端口变化，用 `node -e 'console.log(require(process.env.HOME+"/.dsh/shared-memory/runtime.json").origin)'` 或 `~/.dsh/shared-memory/open-ui.sh` 获取）：
 
-- 记忆/回收站/待确认三个视图，搜索高亮 + 相关性/最新排序
-- 编辑、软删除、恢复、彻底删除、编辑历史回滚
-- 当前焦点编辑、JSONL 导出
-- 备份/恢复、导入 ChatGPT/Claude 历史对话
-- 统计：记忆数、原话数、回收站数、会话数、使用次数
+- **概览**：当前焦点、规模统计、14 天新增趋势、热门标签（点击即筛选）、最常被用到的记忆、最近会话
+- **记忆**：搜索高亮、类型筛选、相关性/最新排序、编辑与历史回滚、复制、批量选择（改标签/改类型/批量删除/导出所选）
+- **待确认**：自动抽取候选，接受 / 编辑后接受 / 拒绝 / 全部接受
+- **重复检测**：完全重复分组 + 相似度评分（阈值 0.6 / 0.8 / 0.9 可调），可直接删除冗余条目
+- **回收站**：恢复、彻底删除、清空
+- **设置**：访问 token、备份/恢复、导入 ChatGPT/Claude 历史对话、危险操作
+- 深色 / 浅色主题跟随系统或手动切换；`/` 聚焦搜索、`Esc` 退出选择、`R` 刷新；支持 `?view=`、`?theme=`、`?dup=` 深链
 
 ## 快速开始
 

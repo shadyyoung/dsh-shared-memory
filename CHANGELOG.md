@@ -4,6 +4,14 @@
 
 ### 新增 / Added
 
+- **控制台 UI 重做**：侧栏导航 + 六个视图（概览 / 记忆 / 待确认 / 重复检测 / 回收站 / 设置），深色与浅色主题（跟随系统或手动切换），响应式布局，`prefers-reduced-motion` 支持。
+  - **概览**：当前焦点、规模卡片、14 天新增柱状图、热门标签（点击筛选）、最常被用到的记忆、最近会话。
+  - **重复检测**：完全重复分组 + 相似度评分（阈值 0.6/0.8/0.9），可直接删除冗余条目。
+  - **批量操作**：多选后改标签 / 改类型 / 移到回收站 / 导出所选。
+  - 编辑历史、复制、`/` 聚焦搜索、`Esc` 退出选择、`R` 刷新；支持 `?view=`、`?theme=`、`?dup=` 深链。
+- **新 HTTP 接口**：`GET /api/stats`（聚合统计）、`GET /api/duplicates`（重复检测）、`POST /api/bulk`（批量 forget/purge/restore/retag/kind）。
+- **UI 热更新**：`/ui` 改为按文件 mtime 读取，改动 `ui/index.html` 后刷新页面即可生效，不必重启 Harness。
+- 修复数字查询参数默认值：`?limit=` / `?days=` / `?offset=` 缺省时不再被当成 `0`（此前 `/api/items` 不带 `limit` 只返回 1 条）。
 - **登录自启支持 Windows 与 Linux**：`npm run autostart` 现在按平台写入对应的启动后端——macOS LaunchAgent、Windows 计划任务（`ONLOGON`，经 `%LOCALAPPDATA%\dsh-shared-memory\autostart.cmd` 包装启动）、Linux systemd 用户单元（`~/.config/systemd/user/dsh-shared-memory.service`）。
   - 两种模式：`--mode app`（默认，登录后启动 DSH；Linux 没有 DSH 桌面版，默认改走 hub）、`--mode hub`（运行独立 Hub，可配 `--port` / `--store`）。
   - 新增 `--dry-run`：只打印将写入的文件与将执行的命令，不修改系统。

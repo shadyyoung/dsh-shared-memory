@@ -208,14 +208,20 @@ async function atomicWrite(target, body) {
 
 /** Cached single-file UI document, read from ./ui/index.html next to this module. */
 let uiHtmlCache
+/** Read the single-file UI, re-reading when the file changes on disk. */
 async function readUiHtml() {
-  if (uiHtmlCache !== undefined) return uiHtmlCache
+  const file = new URL('./ui/index.html', import.meta.url)
   try {
-    uiHtmlCache = await fsp.readFile(new URL('./ui/index.html', import.meta.url), 'utf8')
+    const stat = await fsp.stat(file)
+    if (uiHtmlCache && uiHtmlCache.mtimeMs === stat.mtimeMs) return uiHtmlCache.html
+    const html = await fsp.readFile(file, 'utf8')
+    uiHtmlCache = { mtimeMs: stat.mtimeMs, html }
+    return html
   } catch {
-    uiHtmlCache = '<!doctype html><meta charset="utf-8"><title>Shared Memory</title><h1>UI not installed</h1><p>ui/index.html is missing from this package.</p>'
+    if (uiHtmlCache) return uiHtmlCache.html
+    uiHtmlCache = { mtimeMs: 0, html: '<!doctype html><meta charset="utf-8"><title>Shared Memory</title><h1>UI not installed</h1><p>ui/index.html is missing from this package.</p>' }
+    return uiHtmlCache.html
   }
-  return uiHtmlCache
 }
 
 /** Extract plain text from message content blocks. */
@@ -1224,11 +1230,13 @@ class SharedMemoryStore {
    * (`deletedAt` is set) and can be restored; pass `purge: true` to remove them
    * permanently.
    */
-  async forget({ id, q, kind, before, purge = false } = {}) {
+  async forget({ id, ids, q, kind, before, purge = false } = {}) {
     await this.ready
     const beforeIds = new Set()
     if (typeof id === 'string' && id.trim()) {
       beforeIds.add(id.trim())
+    } else if (Array.isArray(ids)) {
+      for (const value of ids) if (typeof value === 'string' && value.trim()) beforeIds.add(value.trim())
     } else {
       const kinds = kind ? (Array.isArray(kind) ? kind : [kind]).filter((k) => ALL_KINDS.includes(k)) : []
       const query = typeof q === 'string' ? q.trim().toLowerCase() : ''
@@ -1749,6 +1757,73 @@ class SharedMemoryStore {
       candidates: this.candidates.filter((item) => item.status === 'pending').length,
       autoExtract: this.config.autoExtract,
     }
+  }
+
+  /** Dashboard aggregates for the UI: kind counts, 14-day captures, tags, usage. */
+  dashboard({ days = 14 } = {}) {
+    const active = this.records.filter((record) => !record.deletedAt)
+    const byKind = {}
+    for (const record of active) byKind[record.kind] = (byKind[record.kind] || 0) + 1
+    const dayCount = Math.max(1, Math.min(60, Number.isFinite(days) ? Math.floor(days) : 14))
+    const midnight = new Date()
+    midnight.setHours(0, 0, 0, 0)
+    const series = []
+    for (let index = dayCount - 1; index >= 0; index--) {
+      const start = midnight.getTime() - index * DAY
+      const count = active.filter((record) => record.createdAt >= start && record.createdAt < start + DAY).length
+      series.push({ start, count })
+    }
+    const tagCounts = new Map()
+    for (const record of active) for (const tag of record.tags) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
+    const topTags = [...tagCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+      .slice(0, 12)
+      .map(([tag, count]) => ({ tag, count }))
+    const messageCount = active.filter((record) => record.kind === 'message').length
+    const topUsed = active
+      .filter((record) => record.kind !== 'message')
+      .map((record) => ({ id: record.id, kind: record.kind, text: clip(record.text, 160), count: this.usageFor(record.id).count }))
+      .filter((entry) => entry.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+    // `stats().memories` counts every active record (messages included); the
+    // dashboard shows durable memories and captured messages separately.
+    return { ...this.stats(), memories: active.length - messageCount, byKind, series, topTags, topUsed, updatedAt: Date.now() }
+  }
+
+  /** Exact and near-duplicate active memories (captured messages excluded). */
+  duplicates({ minSimilarity = 0.8 } = {}) {
+    const threshold = Math.min(0.99, Math.max(0.5, Number.isFinite(minSimilarity) ? minSimilarity : 0.8))
+    const normalize = (text) => String(text).toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '')
+    const active = this.records.filter((record) => !record.deletedAt && record.kind !== 'message')
+    const groups = new Map()
+    for (const record of active) {
+      const key = normalize(record.text)
+      if (!key) continue
+      const list = groups.get(key) ?? []
+      list.push(record)
+      groups.set(key, list)
+    }
+    const exact = [...groups.values()]
+      .filter((items) => items.length > 1)
+      .map((items) => ({ key: normalize(items[0].text).slice(0, 120), items }))
+    const tokenized = active.map((record) => ({ record, set: new Set(tokenizeForIndex(record.text)) }))
+    const near = []
+    for (let left = 0; left < tokenized.length; left++) {
+      for (let right = left + 1; right < tokenized.length; right++) {
+        const a = tokenized[left]
+        const b = tokenized[right]
+        if (!a.set.size || !b.set.size) continue
+        let shared = 0
+        for (const token of a.set) if (b.set.has(token)) shared++
+        const similarity = shared / (a.set.size + b.set.size - shared)
+        if (similarity < threshold) continue
+        if (normalize(a.record.text) === normalize(b.record.text)) continue
+        near.push({ similarity: Math.round(similarity * 100) / 100, a: a.record, b: b.record })
+      }
+    }
+    near.sort((x, y) => y.similarity - x.similarity)
+    return { exact, near: near.slice(0, 50), scanned: active.length, threshold }
   }
 
   /** Persist runtime discovery data for the MCP bridge and other apps. */
@@ -2504,6 +2579,14 @@ function createApiHandler(store, config, diag) {
     return token === config.apiToken
   }
 
+  /** Read one numeric query parameter, treating "" and garbage as absent. */
+  const numberParam = (searchParams, name, fallback) => {
+    const raw = searchParams.get(name)
+    if (raw === null || raw.trim() === '') return fallback
+    const value = Number(raw)
+    return Number.isFinite(value) ? value : fallback
+  }
+
   return async function handler(req, res) {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost')
@@ -2554,6 +2637,9 @@ function createApiHandler(store, config, diag) {
             'GET /api/current',
             'GET /api/activity',
             'GET /api/items',
+            'GET /api/stats',
+            'GET /api/duplicates',
+            'POST /api/bulk',
             'GET /api/export',
             'POST /api/remember',
             'POST /api/update',
@@ -2590,7 +2676,7 @@ function createApiHandler(store, config, diag) {
       }
 
       if (sub === '/api/digest' && req.method === 'GET') {
-        const requested = Number(url.searchParams.get('maxChars'))
+        const requested = numberParam(url.searchParams, 'maxChars', NaN)
         const maxChars = Number.isFinite(requested) ? Math.min(8000, Math.max(200, requested)) : Math.max(200, config.maxDigestChars)
         const text = store.digest(maxChars)
         sendJson(res, 200, { text, generatedAt: Date.now(), stats: store.stats() })
@@ -2598,8 +2684,8 @@ function createApiHandler(store, config, diag) {
       }
 
       if (sub === '/api/search' && req.method === 'GET') {
-        const limitParam = Number(url.searchParams.get('limit'))
-        const daysParam = Number(url.searchParams.get('days'))
+        const limitParam = numberParam(url.searchParams, 'limit', NaN)
+        const daysParam = numberParam(url.searchParams, 'days', NaN)
         const result = store.search({
           q: url.searchParams.get('q') ?? '',
           kind: listParam(url.searchParams, 'kind'),
@@ -2618,9 +2704,9 @@ function createApiHandler(store, config, diag) {
       }
 
       if (sub === '/api/items' && req.method === 'GET') {
-        const limitParam = Number(url.searchParams.get('limit'))
-        const offsetParam = Number(url.searchParams.get('offset'))
-        const daysParam = Number(url.searchParams.get('days'))
+        const limitParam = numberParam(url.searchParams, 'limit', NaN)
+        const offsetParam = numberParam(url.searchParams, 'offset', NaN)
+        const daysParam = numberParam(url.searchParams, 'days', NaN)
         const result = store.search({
           q: url.searchParams.get('q') ?? '',
           kind: listParam(url.searchParams, 'kind'),
@@ -2640,6 +2726,71 @@ function createApiHandler(store, config, diag) {
         return
       }
 
+      if (sub === '/api/stats' && req.method === 'GET') {
+        const daysParam = numberParam(url.searchParams, 'days', NaN)
+        sendJson(res, 200, store.dashboard({ days: Number.isFinite(daysParam) ? daysParam : 14 }))
+        return
+      }
+
+      if (sub === '/api/duplicates' && req.method === 'GET') {
+        const thresholdParam = numberParam(url.searchParams, 'minSimilarity', NaN)
+        sendJson(res, 200, store.duplicates({ minSimilarity: Number.isFinite(thresholdParam) ? thresholdParam : 0.8 }))
+        return
+      }
+
+      if (sub === '/api/bulk' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        const ids = Array.isArray(body.ids)
+          ? body.ids.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()).slice(0, 500)
+          : []
+        if (!ids.length) {
+          sendError(res, 400, 'BAD_REQUEST', 'ids 不能为空')
+          return
+        }
+        const action = typeof body.action === 'string' ? body.action : ''
+        if (action === 'forget' || action === 'purge') {
+          const result = await store.forget({ ids, purge: action === 'purge' })
+          sendJson(res, 200, { action, ...result })
+          return
+        }
+        if (action === 'restore') {
+          const failed = []
+          let restored = 0
+          for (const id of ids) {
+            try {
+              const result = await store.restore({ id })
+              if (result.restored) restored += 1
+            } catch (error) {
+              failed.push({ id, error: error.message })
+            }
+          }
+          sendJson(res, 200, { action, restored, failed })
+          return
+        }
+        if (action === 'retag' || action === 'kind') {
+          const kind = action === 'kind' && REMEMBER_KINDS.includes(body.kind) ? body.kind : ''
+          if (action === 'kind' && !kind) {
+            sendError(res, 400, 'BAD_REQUEST', 'kind 不合法')
+            return
+          }
+          const tags = action === 'retag' ? normalizeTags(body.tags) : undefined
+          const failed = []
+          let updated = 0
+          for (const id of ids) {
+            try {
+              await store.update(action === 'kind' ? { id, kind } : { id, tags })
+              updated += 1
+            } catch (error) {
+              failed.push({ id, error: error.message })
+            }
+          }
+          sendJson(res, 200, { action, updated, failed })
+          return
+        }
+        sendError(res, 400, 'BAD_REQUEST', 'action 只支持 forget / purge / restore / retag / kind')
+        return
+      }
+
       if (sub === '/api/export' && req.method === 'GET') {
         res.statusCode = 200
         res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
@@ -2650,14 +2801,14 @@ function createApiHandler(store, config, diag) {
       }
 
       if (sub === '/api/recent' && req.method === 'GET') {
-        const limitParam = Number(url.searchParams.get('limit'))
+        const limitParam = numberParam(url.searchParams, 'limit', NaN)
         const result = store.search({ limit: Number.isFinite(limitParam) ? limitParam : 20 })
         sendJson(res, 200, result)
         return
       }
 
       if (sub === '/api/activity' && req.method === 'GET') {
-        const limitParam = Number(url.searchParams.get('limit'))
+        const limitParam = numberParam(url.searchParams, 'limit', NaN)
         sendJson(res, 200, { activity: store.activityList(Number.isFinite(limitParam) ? limitParam : 10) })
         return
       }
@@ -2709,7 +2860,7 @@ function createApiHandler(store, config, diag) {
       }
 
       if (sub === '/api/candidates' && req.method === 'GET') {
-        const limitParam = Number(url.searchParams.get('limit'))
+        const limitParam = numberParam(url.searchParams, 'limit', NaN)
         const result = store.listCandidates({
           status: url.searchParams.get('status') ?? 'pending',
           limit: Number.isFinite(limitParam) ? limitParam : 50,

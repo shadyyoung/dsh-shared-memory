@@ -154,6 +154,56 @@ Base：`runtime.json.apiBase`，即 `{origin}/dsh-memory`。
 参数：`q`、`kind`、`tag`、`limit`（默认 50，最大 100）、`offset`、`days`、`session`、`sort`（`relevance` 默认/`newest`）、`deleted`、`includeDeleted`。
 有 `q` 时默认 BM25 相关性排序（中文 bigram 分词，标签参与索引）；返回项带 `usage: {count, lastAt}`。
 
+### GET /api/stats
+
+概览页的聚合数据（一次请求拿全）：
+
+```json
+{
+  "memories": 33, "messages": 132, "sessions": 14, "trash": 5, "candidates": 0, "hasFocus": true,
+  "byKind": { "note": 7, "project": 23, "profile": 1, "message": 132 },
+  "series": [{ "start": 1793001600000, "count": 6 }],
+  "topTags": [{ "tag": "shared-memory", "count": 19 }],
+  "topUsed": [{ "id": "mem_...", "kind": "project", "text": "...", "count": 386 }],
+  "updatedAt": 1794200000000
+}
+```
+
+`memories` 只统计长期记忆（不含用户原话），`messages` 单独给出；`series` 默认 14 天，可用 `?days=7`（1–60）调整。
+
+### GET /api/duplicates
+
+扫描长期记忆（不含 `message`）里的重复内容：
+
+```json
+{
+  "exact": [{ "key": "本周要完成…", "items": [Memory, Memory] }],
+  "near": [{ "similarity": 0.92, "a": Memory, "b": Memory }],
+  "scanned": 37,
+  "threshold": 0.8
+}
+```
+
+`exact` 是去空白/标点后的完全重复分组；`near` 用 BM25 同款分词算 Jaccard 相似度，可用 `?minSimilarity=0.6`（0.5–0.99）放宽。
+
+### POST /api/bulk
+
+批量操作，最多 500 个 id：
+
+```json
+{ "ids": ["mem_...", "mem_..."], "action": "forget" }
+```
+
+| action | 额外字段 | 返回 |
+|---|---|---|
+| `forget` | — | `{ "action": "forget", "deleted": 2, "ids": [...] }`（进回收站） |
+| `purge` | — | 同上，但彻底删除 |
+| `restore` | — | `{ "restored": 1, "failed": [{ "id": "...", "error": "..." }] }` |
+| `retag` | `tags: ["a"]` | `{ "updated": 2, "failed": [...] }`，替换标签 |
+| `kind` | `kind: "note"` | `{ "updated": 1, "failed": [...] }`，只支持可编辑类型 |
+
+`ids` 为空或 action 未知返回 400；逐条失败不会中断整批，错误在 `failed` 里返回。
+
 ### POST /api/update
 
 按 id 编辑一条已有记忆（保留 id 与 `createdAt`，写入 `updatedAt`）：

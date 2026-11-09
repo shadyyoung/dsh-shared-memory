@@ -20,6 +20,7 @@
     "docs/*.md",
     "docs/HOW-IT-WORKS.md",
     "docs/assets/*.svg",
+    "docs/assets/*.png",
     "icon.svg",
     "index.js",
     "locale/*.json",

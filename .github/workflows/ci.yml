@@ -28,6 +28,8 @@ jobs:
         run: node test/tool-output-contract.mjs
       - name: Autostart plan (macOS / Windows / Linux)
         run: node test/autostart.mjs
+      - name: UI features (stats / duplicates / bulk)
+        run: node test/ui-features.mjs
       - name: MCP bridge smoke
         run: node test/mcp-smoke.mjs
       - name: Standalone hub smoke
