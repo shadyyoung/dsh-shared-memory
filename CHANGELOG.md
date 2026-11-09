@@ -1,5 +1,11 @@
 # Changelog
 
+## 未发布 / Unreleased
+
+### 修复 / Fixed
+
+- `skills/shared-memory/SKILL.md`：node 解析改为 `command -v node` → `/usr/local/bin/node` → `/opt/homebrew/bin/node` 依次回退，GUI 应用的 PATH 不含 Homebrew/usr-local 时也能取到服务地址（已在本机普通 PATH 与精简 PATH 下各验证一次）。
+
 ## v1.7.0 — 2026-11-09
 
 ### 新增 / Added
