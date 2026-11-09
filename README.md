@@ -73,6 +73,9 @@
 
 ## 快速开始
 
+> [!TIP]
+> 不想用 git 的，可以到 [Releases](https://github.com/shadyyoung/dsh-shared-memory/releases) 下载 `shared-memory-<版本>.zip` 解压使用 —— 内容和 `git clone` 得到的完全一致（由 `git archive` 生成，不含 `.git` / `node_modules`），并附 `SHA256SUMS.txt` 供校验。
+
 ### 方式 A：装进 DeepSeek Harness（推荐）
 
 前置：DeepSeek Harness Desktop、Node.js ≥ 18。
@@ -132,6 +135,18 @@ node standalone/server.mjs --port 7400 --store ~/.dsh/shared-memory
 | WorkBuddy | MCP stdio + skill | ✅ | `~/.workbuddy/mcp.json`；需在界面信任一次本地 MCP |
 | 任意脚本 / 浏览器 | HTTP | ✅ | `/dsh-memory/api/*` |
 | ChatGPT 网页 / 纯聊天 | ❌ | — | 只支持远程 Connector，无法读本地 MCP |
+
+## 平台支持
+
+插件是纯 JavaScript（Node.js ≥ 18，零原生依赖），**macOS、Windows、Linux 使用同一份代码**，所以只发一个 Release，不按平台拆分。
+
+| 能力 | macOS | Windows | Linux |
+|---|---|---|---|
+| 插件本体 / MCP 桥 / HTTP API / UI | ✅ | ✅ | ✅ |
+| 独立 Hub（`standalone/server.mjs`） | ✅ | ✅ | ✅ |
+| `npm run install-apps`（写入各应用 MCP 配置） | ✅ | ✅ | ✅ |
+| `npm run autostart`（登录自启） | ✅ LaunchAgent | ⏳ 待补（计划任务） | ⏳ 待补（systemd） |
+| CI 验证（Node 20/22 × 三平台） | ✅ | ✅ | ✅ |
 
 ## 工具
 
@@ -220,6 +235,8 @@ npm run doctor                  # 各应用接入自检
 ```
 
 CI：GitHub Actions 三平台矩阵（`ubuntu-latest` / `macos-latest` / `windows-latest` × Node 20/22），全部通过。
+
+发布：打 `v*` tag 会触发 [`release.yml`](.github/workflows/release.yml)，用 `git archive` 生成 `shared-memory-<版本>.zip` 与 `SHA256SUMS.txt` 并挂到该 Release；也可手动补附件：`gh workflow run release.yml -f tag=v1.6.3`。
 
 ## 仓库结构
 

@@ -1,0 +1,82 @@
+name: Release asset
+
+# Builds a portable source zip for every release tag and attaches it to the
+# GitHub Release, so Windows / macOS users can download one file instead of
+# cloning the repo. Also runnable by hand for an existing tag:
+#
+#   gh workflow run release.yml -f tag=v1.6.3
+#
+# The zip is produced with `git archive`, so it contains exactly the tracked
+# files of that tag (no .git, no node_modules).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build a package for (e.g. v1.6.3)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag and file name
+        id: meta
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "file=shared-memory-${VERSION}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Build portable zip
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          mkdir -p dist
+          git archive --format=zip \
+            --prefix="shared-memory-${VERSION}/" \
+            -o "dist/shared-memory-${VERSION}.zip" "$TAG"
+          cd dist
+          sha256sum "shared-memory-${VERSION}.zip" > SHA256SUMS.txt
+          ls -lh
+          unzip -l "shared-memory-${VERSION}.zip" | head -20
+
+      - name: Upload to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" "dist/shared-memory-${VERSION}.zip" dist/SHA256SUMS.txt --clobber
+
+      - name: Summary
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          {
+            echo "### Release asset"
+            echo ""
+            echo "- tag: \`$TAG\`"
+            echo "- asset: \`shared-memory-${VERSION}.zip\`"
+            echo "- sha256: \`$(cut -d' ' -f1 dist/SHA256SUMS.txt)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
